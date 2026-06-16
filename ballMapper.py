@@ -15,7 +15,7 @@ try:
 except ImportError:
     faiss = None
 
-from typing import List, Literal, Tuple
+from typing import List, Literal, Mapping, Tuple
 
 import matplotlib.pyplot as plt
 
@@ -30,6 +30,7 @@ def computeLandmarks(
     method: Literal["ballTree", "faiss"] = "ballTree",
     metric: str = "euclidean",
     leafSize: int = 40,
+    metricKwargs: Mapping[str, object] | None = None,
 ) -> Tuple[List[int], List[np.ndarray]]:
     """
     Compute landmarks and their coverage sets from data points.
@@ -44,61 +45,147 @@ def computeLandmarks(
         Backend method for nearest neighbor search. Options are:
         - "ballTree": uses scikit-learn's BallTree.
         - "faiss": uses FAISS library for faster searches on large datasets.
-    metric : str, default="minkowski"
-        Distance metric for BallTree. Ignored if method="faiss".
+    metric : str, default="euclidean"
+        Distance metric. BallTree accepts its supported metrics; FAISS accepts
+        only "euclidean" and "cosine".
+    leafSize : int, default=40
+        Leaf size used by BallTree.
+    metricKwargs : mapping or None, default=None
+        Extra keyword arguments passed to BallTree's metric, such as
+        ``{"p": 3}`` for Minkowski distance or ``{"VI": ...}`` for
+        Mahalanobis distance. Not supported by FAISS.
 
     Returns
     -------
     landmarks : list[int]
         Indices of selected landmark points.
     cover : list[np.ndarray]
-        List of arrays, each containing the indices of points covered by the corresponding landmark.
+        Arrays containing the point indices covered by each landmark.
 
     Raises
     ------
     ValueError
         If `method` is not one of {"ballTree", "faiss"}.
     ImportError
-        If required libaissrary (scikit-learn or faiss) is not installed.
+        If the required library (scikit-learn or faiss) is not installed.
 
     Example
     -------
     >>> X = np.random.rand(100, 3)
     >>> landmarks, cover = computeLandmarks(X, eps=0.2, method="ballTree")
     """
-    method = method.lower()
+    X = _validatePointCloud(X, eps)
+    methodKey, metricKey, metricKwargs = _normalizeBackendOptions(
+        method, metric, leafSize, metricKwargs
+    )
 
-    if method == "balltree":
-        return _computeLandmarksBallTree(X, eps, metric, leafSize)
+    if X.shape[0] == 0:
+        return [], []
 
-    elif method == "faiss" and metric == "euclidean":
+    if methodKey == "balltree":
+        return _computeLandmarksBallTree(X, eps, metricKey, leafSize, metricKwargs)
+
+    if metricKey == "euclidean":
         return _computeLandmarksEuclideanFAISS(X, eps)
 
-    elif method == "faiss" and metric == "cosine":
-        return _computeLandmarksCosineFAISS(X, eps)
+    return _computeLandmarksCosineFAISS(X, eps)
 
+
+def _validatePointCloud(X: np.ndarray, eps: float) -> np.ndarray:
+    """Validate and normalize point-cloud inputs used by landmark routines."""
+    X = np.asarray(X)
+
+    if X.ndim != 2:
+        raise ValueError("X must be a 2D array with shape (n_samples, n_features).")
+    if X.shape[0] > 0 and X.shape[1] == 0:
+        raise ValueError("X must contain at least one feature.")
+    if not np.issubdtype(X.dtype, np.number):
+        raise TypeError("X must contain numeric values.")
+    if not np.all(np.isfinite(X)):
+        raise ValueError("X must contain only finite values.")
+    if not np.isscalar(eps) or not np.isfinite(eps) or eps < 0:
+        raise ValueError("eps must be a finite, non-negative scalar.")
+
+    return X
+
+
+def _validateLeafSize(leafSize: int) -> None:
+    """Validate BallTree leaf size."""
+    if not isinstance(leafSize, (int, np.integer)) or leafSize <= 0:
+        raise ValueError("leafSize must be a positive integer.")
+
+
+def _normalizeBackendOptions(method, metric, leafSize, metricKwargs):
+    """Normalize backend options and reject unsupported combinations."""
+    if not isinstance(method, str):
+        raise TypeError("method must be a string.")
+    if not isinstance(metric, str):
+        raise TypeError("metric must be a string.")
+
+    methodKey = method.lower()
+    metricKey = metric.lower()
+    metricKwargs = dict(metricKwargs or {})
+
+    if methodKey not in {"balltree", "faiss"}:
+        raise ValueError("Method must be 'ballTree' or 'faiss'.")
+
+    if methodKey == "balltree":
+        _validateLeafSize(leafSize)
     else:
-        raise ValueError(
-            "Method must be 'ballTree' or 'faiss'. "
-            "For 'faiss', metric must be 'euclidean' or 'cosine'."
-        )
+        if metricKey not in {"euclidean", "cosine"}:
+            raise ValueError("For 'faiss', metric must be 'euclidean' or 'cosine'.")
+        if metricKwargs:
+            raise ValueError("metricKwargs is supported only with method='ballTree'.")
+
+    return methodKey, metricKey, metricKwargs
 
 
-def _computeLandmarksBallTree(X, eps, metric, leafSize):
+def _validateStartIndex(start_index: int | None, n: int) -> None:
+    """Validate an optional FPS start index."""
+    if start_index is None:
+        return
+    if not isinstance(start_index, (int, np.integer)):
+        raise TypeError("start_index must be an integer or None.")
+    if not 0 <= int(start_index) < n:
+        raise IndexError("start_index is out of bounds for X.")
+
+
+def _lexicographicallySmallestIndex(X: np.ndarray) -> int:
+    """Return the row index ordered by feature 0, then feature 1, and so on."""
+    keys = tuple(X[:, j] for j in range(X.shape[1] - 1, -1, -1))
+    return int(np.lexsort(keys)[0])
+
+
+def _createBallTree(X, metric, leafSize, metricKwargs):
+    """Create a BallTree with one shared metric configuration."""
+    if BallTree is None:
+        raise ImportError("scikit-learn is required for BallTree method.")
+    return BallTree(
+        X,
+        metric=metric,
+        leaf_size=leafSize,
+        **metricKwargs,
+    )
+
+
+def _validateCosinePoints(points: np.ndarray) -> None:
+    """Reject zero vectors, for which cosine distance is undefined."""
+    if np.any(np.linalg.norm(points, axis=1) == 0):
+        raise ValueError("Cosine distance is undefined for zero vectors.")
+
+
+def _computeLandmarksBallTree(X, eps, metric, leafSize, metricKwargs=None):
     """
     Internal helper: compute landmarks using scikit-learn BallTree.
     """
-    if BallTree is None:
-        raise ImportError("scikit-learn is required for BallTree method.")
-
     n = X.shape[0]
-    tree = BallTree(X, metric=metric, leaf_size=leafSize)
+    tree = _createBallTree(X, metric, leafSize, dict(metricKwargs or {}))
 
     uncovered = np.ones(n, dtype=bool)
     landmarks, cover = [], []
 
     while np.any(uncovered):
-        i = np.argmax(uncovered)
+        i = int(np.argmax(uncovered))
         landmarks.append(i)
         idx = tree.query_radius(X[i : i + 1], eps)[0]
         cover.append(idx)
@@ -111,12 +198,8 @@ def _computeLandmarksEuclideanFAISS(X, eps):
     """
     Internal helper: compute landmarks using FAISS.
     """
-    if faiss is None:
-        raise ImportError("FAISS is required for method='faiss'.")
-
-    points = X.astype(np.float32)
-    index = faiss.IndexFlatL2(points.shape[1])
-    index.add(points)
+    points, index = _createEuclideanFAISSIndex(X)
+    radius = np.nextafter(np.float32(eps**2), np.float32(np.inf))
 
     covered = np.zeros(len(points), dtype=bool)
     landmarks, cover = [], []
@@ -124,7 +207,7 @@ def _computeLandmarksEuclideanFAISS(X, eps):
     for i in range(len(points)):
         if not covered[i]:
             landmarks.append(i)
-            lims, _, I = index.range_search(points[i].reshape(1, -1), eps**2)
+            lims, _, I = index.range_search(points[i : i + 1], radius)
             pts = I[lims[0] : lims[1]]
             cover.append(pts)
             covered[pts] = True
@@ -136,15 +219,8 @@ def _computeLandmarksCosineFAISS(X, eps):
     """
     Internal helper: compute landmarks using FAISS.
     """
-    if faiss is None:
-        raise ImportError("FAISS is required for method='faiss'.")
-
-    points = X.astype(np.float32)
-    faiss.normalize_L2(points)
-
-    d = points.shape[1]
-    index = faiss.IndexFlatIP(d)
-    index.add(points)
+    points, index = _createCosineFAISSIndex(X)
+    radius = np.nextafter(np.float32(1.0 - eps), np.float32(-np.inf))
 
     covered = np.zeros(len(points), dtype=bool)
     landmarks, cover = [], []
@@ -152,7 +228,7 @@ def _computeLandmarksCosineFAISS(X, eps):
     for i in range(len(points)):
         if not covered[i]:
             landmarks.append(i)
-            lims, _, I = index.range_search(points[i].reshape(1, -1), 1 - eps)
+            lims, _, I = index.range_search(points[i : i + 1], radius)
             pts = I[lims[0] : lims[1]]
             cover.append(pts)
             covered[pts] = True
@@ -168,19 +244,35 @@ def computeLandmarksFPS(
     method: Literal["ballTree", "faiss"] = "ballTree",
     metric: str = "euclidean",
     leafSize: int = 40,
+    metricKwargs: Mapping[str, object] | None = None,
 ) -> Tuple[List[int], List[np.ndarray]]:
     """
-    Deterministic farthest point sampling AND epsilon-ball cover.
+    Deterministic farthest point sampling and epsilon-ball cover.
+
+    FPS and cover construction use the same distance metric, metric parameters,
+    and backend semantics. Consequently, the returned landmarks form an
+    epsilon-net of X under that distance: every point is within eps of at least
+    one landmark, and distinct landmarks are more than eps apart.
 
     Parameters
     ----------
-    X : array (n_samples, n_features)
+    X : np.ndarray
+        Array of shape (n_samples, n_features).
     eps : float
         Radius for Ball Mapper cover.
     start_index : int or None
         Deterministic starting point (default = lexicographically smallest).
-    use_faiss : bool
-        If True, use FAISS for radius queries (requires faiss).
+    method : str, default="ballTree"
+        Distance backend: "ballTree" or "faiss".
+    metric : str, default="euclidean"
+        Distance metric. BallTree accepts its supported metrics; FAISS accepts
+        only "euclidean" and "cosine".
+    leafSize : int, default=40
+        Leaf size used by BallTree.
+    metricKwargs : mapping or None, default=None
+        Extra keyword arguments passed to BallTree's metric, such as
+        ``{"p": 3}`` for Minkowski distance or ``{"VI": ...}`` for
+        Mahalanobis distance. Not supported by FAISS.
 
     Returns
     -------
@@ -190,55 +282,124 @@ def computeLandmarksFPS(
         List where cover[i] contains indices of all points within eps of landmarks[i].
     """
 
+    X = _validatePointCloud(X, eps)
+    methodKey, metricKey, metricKwargs = _normalizeBackendOptions(
+        method, metric, leafSize, metricKwargs
+    )
+
     if X.shape[0] == 0:
         return [], []
+
+    _validateStartIndex(start_index, X.shape[0])
 
     # --------------------------------------------------
     # 1) FPS landmark selection
     # --------------------------------------------------
     if start_index is None:
-        start_index = np.lexsort(X.T)[0]
+        start_index = _lexicographicallySmallestIndex(X)
+    else:
+        start_index = int(start_index)
 
-    norms = np.sum(X * X, axis=1)
+    if methodKey == "balltree":
+        tree = _createBallTree(X, metricKey, leafSize, metricKwargs)
 
-    def sqdist_to(i):
-        return norms + norms[i] - 2 * (X @ X[i])
+        def distanceToAll(i):
+            distances, indices = tree.query(
+                X[i : i + 1],
+                k=X.shape[0],
+                return_distance=True,
+            )
+            result = np.empty(X.shape[0], dtype=float)
+            result[indices[0]] = distances[0]
+            return result
 
-    dists = sqdist_to(start_index)
+        landmarks = _selectLandmarksFPS(X.shape[0], eps, start_index, distanceToAll)
+        cover = _buildCoverBallTree(
+            X,
+            landmarks,
+            eps,
+            metricKey,
+            leafSize,
+            metricKwargs,
+            tree=tree,
+        )
+
+    elif metricKey == "euclidean":
+        points, index = _createEuclideanFAISSIndex(X)
+
+        def distanceToAll(i):
+            squaredDistances, indices = index.search(points[i : i + 1], X.shape[0])
+            result = np.empty(X.shape[0], dtype=float)
+            result[indices[0]] = np.sqrt(np.maximum(squaredDistances[0], 0.0))
+            return result
+
+        landmarks = _selectLandmarksFPS(X.shape[0], eps, start_index, distanceToAll)
+        cover = _buildCoverEuclideanFAISS(X, landmarks, eps, points=points, index=index)
+
+    else:
+        points, index = _createCosineFAISSIndex(X)
+
+        def distanceToAll(i):
+            similarities, indices = index.search(points[i : i + 1], X.shape[0])
+            result = np.empty(X.shape[0], dtype=float)
+            result[indices[0]] = np.maximum(1.0 - similarities[0], 0.0)
+            return result
+
+        landmarks = _selectLandmarksFPS(X.shape[0], eps, start_index, distanceToAll)
+        cover = _buildCoverCosineFAISS(X, landmarks, eps, points=points, index=index)
+
+    return landmarks, cover
+
+
+def _selectLandmarksFPS(n, eps, start_index, distanceToAll):
+    """Run metric-agnostic FPS using distances supplied by the cover backend."""
+    dists = np.asarray(distanceToAll(start_index), dtype=float)
+    if dists.shape != (n,):
+        raise RuntimeError("Distance backend returned an invalid distance array.")
+    if not np.all(np.isfinite(dists)):
+        raise ValueError("The selected metric produced non-finite distances.")
+
+    dists = np.maximum(dists, 0.0)
     landmarks = [int(start_index)]
-    eps2 = eps * eps
 
     while True:
         next_index = int(np.argmax(dists))
-        max_dist = dists[next_index]
+        maxDist = float(dists[next_index])
 
-        if max_dist <= eps2:
+        if maxDist <= eps:
             break
 
         landmarks.append(next_index)
-        dists = np.minimum(dists, sqdist_to(next_index))
+        newDists = np.asarray(distanceToAll(next_index), dtype=float)
+        if newDists.shape != (n,):
+            raise RuntimeError("Distance backend returned an invalid distance array.")
+        if not np.all(np.isfinite(newDists)):
+            raise ValueError("The selected metric produced non-finite distances.")
+        dists = np.minimum(dists, np.maximum(newDists, 0.0))
 
-    # --------------------------------------------------
-    # 2) Cover construction
-    # --------------------------------------------------
-    method = method.lower()
+    return landmarks
 
-    if method == "balltree":
-        cover = _buildCoverBallTree(X, landmarks, eps, metric, leafSize)
 
-    elif method == "faiss" and metric == "euclidean":
-        cover = _buildCoverEuclideanFAISS(X, landmarks, eps)
+def _createEuclideanFAISSIndex(X):
+    """Create a float32 FAISS squared-L2 index."""
+    if faiss is None:
+        raise ImportError("FAISS is required for method='faiss'.")
+    points = X.astype(np.float32, copy=True)
+    index = faiss.IndexFlatL2(points.shape[1])
+    index.add(points)
+    return points, index
 
-    elif method == "faiss" and metric == "cosine":
-        cover = _buildCoverCosineFAISS(X, landmarks, eps)
 
-    else:
-        raise ValueError(
-            "Method must be 'ballTree' or 'faiss'. "
-            "For 'faiss', metric must be 'euclidean' or 'cosine'."
-        )
-
-    return landmarks, cover
+def _createCosineFAISSIndex(X):
+    """Create a normalized float32 FAISS inner-product index."""
+    if faiss is None:
+        raise ImportError("FAISS is required for method='faiss'.")
+    points = X.astype(np.float32, copy=True)
+    _validateCosinePoints(points)
+    faiss.normalize_L2(points)
+    index = faiss.IndexFlatIP(points.shape[1])
+    index.add(points)
+    return points, index
 
 
 # =====================================================
@@ -252,14 +413,14 @@ def _buildCoverBallTree(
     eps: float,
     metric: str = "euclidean",
     leafSize: int = 40,
+    metricKwargs: Mapping[str, object] | None = None,
+    tree=None,
 ) -> List[np.ndarray]:
     """
     Build epsilon-ball covers for a fixed list of landmarks using BallTree.
     """
-    if BallTree is None:
-        raise ImportError("scikit-learn is required for BallTree method.")
-
-    tree = BallTree(X, metric=metric, leaf_size=leafSize)
+    if tree is None:
+        tree = _createBallTree(X, metric, leafSize, dict(metricKwargs or {}))
 
     cover = []
     for i in landmarks:
@@ -273,22 +434,20 @@ def _buildCoverEuclideanFAISS(
     X: np.ndarray,
     landmarks: List[int],
     eps: float,
+    points=None,
+    index=None,
 ) -> List[np.ndarray]:
     """
     Build epsilon-ball covers for a fixed list of landmarks using FAISS L2 search.
     """
-    if faiss is None:
-        raise ImportError("FAISS is required for method='faiss'.")
+    if points is None or index is None:
+        points, index = _createEuclideanFAISSIndex(X)
 
-    points = X.astype(np.float32)
-    index = faiss.IndexFlatL2(points.shape[1])
-    index.add(points)
-
-    eps2 = eps * eps
+    radius = np.nextafter(np.float32(eps**2), np.float32(np.inf))
     cover = []
 
     for i in landmarks:
-        lims, _, I = index.range_search(points[i].reshape(1, -1), eps2)
+        lims, _, I = index.range_search(points[i : i + 1], radius)
         pts = I[lims[0] : lims[1]]
         cover.append(pts)
 
@@ -299,6 +458,8 @@ def _buildCoverCosineFAISS(
     X: np.ndarray,
     landmarks: List[int],
     eps: float,
+    points=None,
+    index=None,
 ) -> List[np.ndarray]:
     """
     Build epsilon-ball covers for a fixed list of landmarks using FAISS cosine search.
@@ -307,20 +468,14 @@ def _buildCoverCosineFAISS(
 
         cosine_similarity >= 1 - eps
     """
-    if faiss is None:
-        raise ImportError("FAISS is required for method='faiss'.")
+    if points is None or index is None:
+        points, index = _createCosineFAISSIndex(X)
 
-    points = X.astype(np.float32)
-    faiss.normalize_L2(points)
-
-    index = faiss.IndexFlatIP(points.shape[1])
-    index.add(points)
-
-    radius = 1.0 - eps
+    radius = np.nextafter(np.float32(1.0 - eps), np.float32(-np.inf))
     cover = []
 
     for i in landmarks:
-        lims, _, I = index.range_search(points[i].reshape(1, -1), radius)
+        lims, _, I = index.range_search(points[i : i + 1], radius)
         pts = I[lims[0] : lims[1]]
         cover.append(pts)
 
@@ -350,13 +505,12 @@ def buildMapper(cover):
 
     Notes
     -----
-    This function is faster than buildMapper for large datasets, as it avoids
-    repeated set intersections.
+    The inverted index avoids repeated pairwise set intersections.
 
     Example
     -------
     >>> landmarks, cover = computeLandmarks(X, eps=0.2)
-    >>> G = buildMapperFast(cover)
+    >>> G = buildMapper(cover)
     """
     G = nx.Graph()
     n = len(cover)
@@ -398,6 +552,7 @@ def colorByFunction(X, cover, func=np.mean):
     colors : np.ndarray
         One value per landmark (node).
     """
+    X = np.asarray(X)
     colors = np.zeros(len(cover))
 
     for i, pts in enumerate(cover):
@@ -413,7 +568,8 @@ def colorByMode(y, cover):
     """
     Assign each ball the most frequent label among covered points.
     """
-    colors = np.zeros(len(cover), dtype=int)
+    y = np.asarray(y)
+    colors = np.empty(len(cover), dtype=object)
 
     for i, pts in enumerate(cover):
         if len(pts) > 0:
@@ -434,6 +590,7 @@ def colorByEntropy(y, cover):
         p = counts / counts.sum()
         return -np.sum(p * np.log2(p + 1e-12))
 
+    y = np.asarray(y)
     colors = np.zeros(len(cover))
 
     for i, pts in enumerate(cover):
@@ -453,8 +610,33 @@ def colorBySize(cover):
 
 
 def colorByDensity(cover):
-    sizes = np.array([len(c) for c in cover])
-    return sizes / sizes.max()
+    """Normalize cover sizes to the interval [0, 1]."""
+    sizes = np.array([len(c) for c in cover], dtype=float)
+    if sizes.size == 0:
+        return sizes
+    maxSize = sizes.max()
+    if maxSize == 0:
+        return np.zeros_like(sizes)
+    return sizes / maxSize
+
+
+def _scaleNodeSizes(sizes, count, node_scale):
+    """Validate and scale node sizes without dividing by zero."""
+    if not np.isscalar(node_scale) or not np.isfinite(node_scale) or node_scale < 0:
+        raise ValueError("node_scale must be a finite, non-negative scalar.")
+
+    sizes = np.asarray(sizes, dtype=float)
+    if sizes.ndim != 1 or len(sizes) != count:
+        raise ValueError("sizes must contain exactly one value per node.")
+    if not np.all(np.isfinite(sizes)) or np.any(sizes < 0):
+        raise ValueError("sizes must contain finite, non-negative values.")
+    if sizes.size == 0:
+        return sizes
+
+    maxSize = sizes.max()
+    if maxSize == 0:
+        return np.zeros_like(sizes)
+    return node_scale * sizes / maxSize
 
 
 # =====================================================
@@ -504,17 +686,20 @@ def drawBallMapper(
     elif layout == "spectral":
         pos = nx.spectral_layout(G)
     else:
-        raise ValueError("Unknown layout")
+        raise ValueError("Unknown layout. Use 'spring', 'kamada_kawai', or 'spectral'.")
 
     # Sizes
     if sizes is None:
         sizes = np.ones(len(G))
-    sizes = node_scale * (np.asarray(sizes) / np.max(sizes))
+    sizes = _scaleNodeSizes(sizes, len(G), node_scale)
 
     # Colors
     if colors is None:
         node_kwargs = dict(node_color="lightgray")
     else:
+        colors = np.asarray(colors)
+        if colors.ndim != 1 or len(colors) != len(G):
+            raise ValueError("colors must contain exactly one value per node.")
         node_kwargs = dict(node_color=colors, cmap=cmap)
 
     nodes = nx.draw_networkx_nodes(
@@ -566,6 +751,7 @@ def drawBallMapperPlotly(
     layout="spring",
     node_scale=20,
     export_html=None,
+    show=True,
 ):
     """
     Full-featured interactive Ball Mapper visualization.
@@ -583,7 +769,22 @@ def drawBallMapperPlotly(
     node_scale : float
     export_html : str or None
         Path to save interactive HTML.
+    show : bool, default=True
+        Whether to display the figure immediately.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+        The constructed interactive figure.
     """
+
+    nodeIds = list(G.nodes())
+    if any(
+        not isinstance(i, (int, np.integer)) or not 0 <= int(i) < len(cover)
+        for i in nodeIds
+    ):
+        raise ValueError("Graph nodes must be integer indices into cover.")
+    nodeIds = [int(i) for i in nodeIds]
 
     # -----------------------
     # Layout
@@ -593,7 +794,7 @@ def drawBallMapperPlotly(
     elif layout == "kamada_kawai":
         pos = nx.kamada_kawai_layout(G)
     else:
-        raise ValueError("Unknown layout")
+        raise ValueError("Unknown layout. Use 'spring' or 'kamada_kawai'.")
 
     # -----------------------
     # Edge overlaps → thickness
@@ -619,28 +820,28 @@ def drawBallMapperPlotly(
     # -----------------------
     if sizes is None:
         sizes = np.array([len(c) for c in cover])
-    sizes = node_scale * sizes / sizes.max()
+    sizes = _scaleNodeSizes(sizes, len(cover), node_scale)
+    nodeSizes = sizes[nodeIds]
 
     # -----------------------
     # Hover text
     # -----------------------
-    hover_text = [f"Ball {i}<br>Points: {len(cover[i])}" for i in range(len(cover))]
+    hover_text = [f"Ball {i}<br>Points: {len(cover[i])}" for i in nodeIds]
 
-    node_x = [pos[i][0] for i in G.nodes()]
-    node_y = [pos[i][1] for i in G.nodes()]
+    node_x = [pos[i][0] for i in nodeIds]
+    node_y = [pos[i][1] for i in nodeIds]
 
     # -----------------------
     # Colorings
     # -----------------------
-    if colorings is None:
+    if not colorings:
         colorings = {"None": None}
 
     traces = []
-    buttons = []
 
     for i, (name, values) in enumerate(colorings.items()):
         marker = dict(
-            size=sizes,
+            size=nodeSizes,
             line=dict(width=1, color="black"),
         )
 
@@ -648,7 +849,10 @@ def drawBallMapperPlotly(
             marker["color"] = "lightgray"
             marker["showscale"] = False
         else:
-            marker["color"] = values
+            values = np.asarray(values)
+            if values.ndim != 1 or len(values) != len(cover):
+                raise ValueError(f"Coloring {name!r} must contain one value per cover.")
+            marker["color"] = values[nodeIds]
             marker["colorscale"] = "Viridis"
             marker["showscale"] = True
             marker["colorbar"] = dict(title=name)
@@ -666,6 +870,8 @@ def drawBallMapperPlotly(
 
         traces.append(trace)
 
+    buttons = []
+    for i, name in enumerate(colorings):
         buttons.append(
             dict(
                 label=name,
@@ -702,4 +908,7 @@ def drawBallMapperPlotly(
     if export_html:
         fig.write_html(export_html)
 
-    fig.show()
+    if show:
+        fig.show()
+
+    return fig
