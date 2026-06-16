@@ -33,8 +33,11 @@ The resulting graph can reveal clusters, branches, loops, transitions, and other
 
 - Compute Ball Mapper landmarks using a greedy covering strategy
 - Compute landmarks using deterministic farthest point sampling
+- Use the same distance definition for FPS selection and cover queries
+- Construct an `eps`-net under the selected FPS metric
+- Pass metric-specific options through `metricKwargs`
 - Build Ball Mapper graphs using `networkx`
-- Use `BallTree` for efficient radius queries
+- Use `BallTree` for efficient metric-aware distance and radius queries
 - Optionally use `FAISS` for Euclidean or cosine search
 - Color graph nodes by:
   - Custom function values
@@ -151,8 +154,9 @@ landmarks, cover = computeLandmarks(
 | `X` | `np.ndarray` | required | Input data of shape `(n_samples, n_features)` |
 | `eps` | `float` | required | Radius of each Ball Mapper ball |
 | `method` | `"ballTree"` or `"faiss"` | `"ballTree"` | Backend used for radius queries |
-| `metric` | `str` | `"euclidean"` | Distance metric for BallTree or FAISS |
+| `metric` | `str` | `"euclidean"` | Distance metric; BallTree supports its available metrics, while FAISS supports only Euclidean and cosine |
 | `leafSize` | `int` | `40` | Leaf size used by BallTree |
+| `metricKwargs` | mapping or `None` | `None` | Extra BallTree metric arguments, such as `{"p": 3}` or `{"VI": VI}`; not supported by FAISS |
 
 ### Return values
 
@@ -170,7 +174,12 @@ where:
 
 ## Method 2: Farthest Point Sampling
 
-Farthest point sampling chooses landmarks by repeatedly selecting the point farthest from the current set of landmarks.
+Farthest point sampling repeatedly selects the point whose distance to its nearest current landmark is largest. The selection step and the final cover queries use the same `method`, `metric`, and `metricKwargs` configuration.
+
+The algorithm stops when the largest nearest-landmark distance is at most `eps`. Therefore, the returned landmarks form an `eps`-net under the selected distance:
+
+- Every point is within distance `eps` of at least one landmark.
+- Every pair of distinct selected landmarks is more than `eps` apart.
 
 ```python
 from ballMapper import computeLandmarksFPS
@@ -191,18 +200,66 @@ When `start_index=None`, the algorithm starts from the lexicographically smalles
 
 | Parameter | Type | Default | Description |
 |---|---:|---:|---|
-| `X` | `np.ndarray` | required | Input data |
-| `eps` | `float` | required | Radius used for the cover |
+| `X` | `np.ndarray` | required | Input data of shape `(n_samples, n_features)` |
+| `eps` | `float` | required | Stopping radius for FPS and radius of the final cover |
 | `start_index` | `int` or `None` | `None` | Optional starting point for FPS |
-| `method` | `"ballTree"` or `"faiss"` | `"ballTree"` | Backend used to build the final cover |
-| `metric` | `str` | `"euclidean"` | Distance metric |
+| `method` | `"ballTree"` or `"faiss"` | `"ballTree"` | Backend used for both FPS distances and cover queries |
+| `metric` | `str` | `"euclidean"` | Distance metric used consistently by FPS and the cover |
 | `leafSize` | `int` | `40` | BallTree leaf size |
+| `metricKwargs` | mapping or `None` | `None` | Extra BallTree metric arguments; not supported by FAISS |
+
+---
+
+## Using Other BallTree Metrics
+
+Both `computeLandmarks` and `computeLandmarksFPS` accept BallTree metrics. For metrics that do not need extra parameters, pass the metric name directly:
+
+```python
+landmarks, cover = computeLandmarksFPS(
+    X,
+    eps=0.2,
+    method="ballTree",
+    metric="manhattan",
+)
+```
+
+For parameterized metrics, use `metricKwargs`.
+
+### Minkowski distance
+
+```python
+landmarks, cover = computeLandmarksFPS(
+    X,
+    eps=0.2,
+    method="ballTree",
+    metric="minkowski",
+    metricKwargs={"p": 3},
+)
+```
+
+### Mahalanobis distance
+
+```python
+VI = np.linalg.pinv(np.cov(X, rowvar=False))
+
+landmarks, cover = computeLandmarksFPS(
+    X,
+    eps=0.2,
+    method="ballTree",
+    metric="mahalanobis",
+    metricKwargs={"VI": VI},
+)
+```
+
+The numerical meaning of `eps` depends on the selected metric, so values that are suitable for Euclidean distance may not be suitable for another metric.
 
 ---
 
 ## Using FAISS
 
-FAISS can be used instead of BallTree for faster similarity search on larger datasets.
+FAISS can be used instead of BallTree for Euclidean or cosine search on larger datasets. In `computeLandmarksFPS`, the same FAISS distance semantics are used for landmark selection and cover construction.
+
+`metricKwargs` is not supported with `method="faiss"`.
 
 ### Euclidean FAISS
 
@@ -236,7 +293,7 @@ For cosine FAISS, the data is internally normalized and neighbors are selected u
 cosine_similarity >= 1 - eps
 ```
 
-So `eps` behaves like a cosine-distance radius.
+So `eps` behaves like a cosine-distance radius. Cosine distance is undefined for zero vectors, and the implementation rejects input containing them.
 
 ---
 
@@ -550,7 +607,7 @@ drawBallMapperPlotly(
 
 ## Choosing `eps`
 
-The parameter `eps` controls the size of the balls.
+The parameter `eps` controls the size of the balls. Its scale is metric-dependent: the same numeric value can produce very different covers under Euclidean, Manhattan, cosine, Mahalanobis, or another distance.
 
 Smaller `eps` values usually produce:
 
@@ -587,7 +644,8 @@ for eps in [0.05, 0.1, 0.2]:
 ### Use BallTree when:
 
 - Your dataset is small to medium sized
-- You want support for scikit-learn distance metrics
+- You want support for scikit-learn BallTree distance metrics
+- You need metric-specific parameters through `metricKwargs`
 - You do not want to install FAISS
 - You need a simple CPU-based backend
 
@@ -611,6 +669,7 @@ computeLandmarks(
     method="ballTree",
     metric="euclidean",
     leafSize=40,
+    metricKwargs=None,
 )
 ```
 
@@ -634,10 +693,11 @@ computeLandmarksFPS(
     method="ballTree",
     metric="euclidean",
     leafSize=40,
+    metricKwargs=None,
 )
 ```
 
-Computes landmarks using deterministic farthest point sampling, then builds the cover.
+Computes landmarks using deterministic farthest point sampling, then builds the cover with the same distance configuration. The result is an `eps`-net under that distance.
 
 Returns:
 
@@ -819,6 +879,14 @@ metric="euclidean"
 metric="cosine"
 ```
 
+Passing a non-empty `metricKwargs` mapping with `method="faiss"` raises a `ValueError`.
+
+---
+
+### `ValueError: Cosine distance is undefined for zero vectors`
+
+Remove zero vectors, replace them with meaningful nonzero representations, or use a metric other than cosine.
+
 ---
 
 ## Notes
@@ -832,8 +900,11 @@ landmark_index = landmarks[i]
 landmark_point = X[landmark_index]
 ```
 
+- `computeLandmarksFPS` uses the same backend, metric, and metric parameters for FPS distances and cover queries.
+- FPS stops when every point is within `eps` of a selected landmark under that distance.
+- `metricKwargs` is available only with `method="ballTree"`.
 - FAISS internally converts data to `float32`.
-- Cosine FAISS normalizes the input vectors before indexing.
+- Cosine FAISS normalizes the input vectors before indexing and rejects zero vectors.
 - Plotly visualizations call `fig.show()` and can optionally export to HTML.
 
 ---
