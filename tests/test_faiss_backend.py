@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+
 from fast_ballmapper import compute_landmarks
 from fast_ballmapper.backends import _faiss as faiss_backend
 from fast_ballmapper.backends._faiss import FaissBackend
@@ -252,7 +253,7 @@ def test_gpu_auto_only_tries_when_gpu_available():
 
 
 def test_flat_index_can_use_gpu_or_fallback_to_cpu():
-    faiss = pytest.importorskip("faiss")
+    pytest.importorskip("faiss")
 
     x = np.array(
         [

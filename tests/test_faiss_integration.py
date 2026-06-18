@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-faiss = pytest.importorskip("faiss")
-
 from fast_ballmapper import FaissConfig, build_cover, compute_landmarks
+
+pytest.importorskip("faiss")
 
 
 def _as_sets(cover):
