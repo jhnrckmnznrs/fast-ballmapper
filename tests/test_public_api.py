@@ -3,6 +3,8 @@ import fast_ballmapper
 
 def test_public_api_uses_snake_case():
     expected = {
+        "FaissConfig",
+        "build_cover",
         "build_mapper",
         "color_by_density",
         "color_by_entropy",
@@ -13,6 +15,7 @@ def test_public_api_uses_snake_case():
         "compute_landmarks",
         "compute_landmarks_fps",
     }
+
     assert set(fast_ballmapper.__all__) == expected
     assert not hasattr(fast_ballmapper, "computeLandmarks")
     assert not hasattr(fast_ballmapper, "buildMapper")

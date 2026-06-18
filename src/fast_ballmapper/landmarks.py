@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal
 
 import numpy as np
@@ -20,15 +20,14 @@ from fast_ballmapper.backends._ball_tree import (
     distances_to_all,
 )
 from fast_ballmapper.backends._faiss import (
-    build_cover_cosine,
-    build_cover_euclidean,
-    compute_landmarks_cosine,
-    compute_landmarks_euclidean,
+    build_cover_faiss,
+    compute_landmarks_faiss,
     cosine_distances_to_all,
-    create_cosine_index,
-    create_euclidean_index,
+    create_faiss_backend,
     euclidean_distances_to_all,
+    query_faiss_range,
 )
+from fast_ballmapper.faiss import FaissConfig
 
 Backend = Literal["ball_tree", "faiss"]
 Cover = list[np.ndarray]
@@ -41,6 +40,7 @@ def compute_landmarks(
     metric: str = "euclidean",
     leaf_size: int = 40,
     metric_kwargs: Mapping[str, Any] | None = None,
+    faiss_config: FaissConfig | None = None,
 ) -> tuple[list[int], Cover]:
     """Compute greedy landmarks and their epsilon-ball cover.
 
@@ -66,13 +66,19 @@ def compute_landmarks(
     """
     x = validate_point_cloud(x, eps)
     method_key, metric_key, normalized_metric_kwargs = normalize_backend_options(
-        method, metric, leaf_size, metric_kwargs
+        method,
+        metric,
+        leaf_size,
+        metric_kwargs,
     )
 
     if x.shape[0] == 0:
         return [], []
 
     if method_key == "ball_tree":
+        if faiss_config is not None:
+            raise ValueError("faiss_config may only be used with method='faiss'.")
+
         return compute_landmarks_ball_tree(
             x,
             eps,
@@ -80,9 +86,119 @@ def compute_landmarks(
             leaf_size,
             normalized_metric_kwargs,
         )
-    if metric_key == "euclidean":
-        return compute_landmarks_euclidean(x, eps)
-    return compute_landmarks_cosine(x, eps)
+
+    return compute_landmarks_faiss(
+        x,
+        eps,
+        metric_key,
+        faiss_config,
+    )
+
+
+def build_cover(
+    x: np.ndarray,
+    landmarks: Sequence[int],
+    eps: float,
+    method: Backend = "ball_tree",
+    metric: str = "euclidean",
+    leaf_size: int = 40,
+    metric_kwargs: Mapping[str, Any] | None = None,
+    faiss_config: FaissConfig | None = None,
+) -> Cover:
+    """Construct epsilon-balls around a fixed collection of landmarks.
+
+    This function does not select landmarks. It computes one range set
+    for each landmark index supplied by the user.
+
+    Parameters
+    ----------
+    x:
+        Numeric array with shape ``(n_samples, n_features)``.
+    landmarks:
+        Row indices of the fixed landmark points.
+    eps:
+        Finite, non-negative neighborhood radius.
+    method:
+        ``"ball_tree"`` or ``"faiss"``.
+    metric:
+        A BallTree metric, or ``"euclidean"``/``"cosine"`` for FAISS.
+    leaf_size:
+        Positive BallTree leaf size.
+    metric_kwargs:
+        Additional keyword arguments for the BallTree metric.
+    faiss_config:
+        Configuration used when ``method="faiss"``.
+
+    Returns
+    -------
+    cover:
+        One array of point indices for each supplied landmark.
+    """
+    x = validate_point_cloud(x, eps)
+    landmark_indices = _validate_landmark_indices(
+        landmarks,
+        n_samples=x.shape[0],
+    )
+
+    method_key, metric_key, normalized_metric_kwargs = normalize_backend_options(
+        method,
+        metric,
+        leaf_size,
+        metric_kwargs,
+    )
+
+    if not landmark_indices:
+        return []
+
+    if method_key == "ball_tree":
+        if faiss_config is not None:
+            raise ValueError("faiss_config may only be used with method='faiss'.")
+
+        return build_cover_ball_tree(
+            x,
+            landmark_indices,
+            eps,
+            metric_key,
+            leaf_size,
+            normalized_metric_kwargs,
+        )
+
+    return build_cover_faiss(
+        x,
+        landmark_indices,
+        eps,
+        metric_key,
+        faiss_config,
+    )
+
+
+def _validate_landmark_indices(
+    landmarks: Sequence[int],
+    n_samples: int,
+) -> list[int]:
+    """Validate and normalize fixed landmark indices."""
+    landmark_indices: list[int] = []
+    seen: set[int] = set()
+
+    for landmark in landmarks:
+        if not isinstance(landmark, (int, np.integer)):
+            raise TypeError("Each landmark must be an integer row index.")
+
+        landmark_index = int(landmark)
+
+        if not 0 <= landmark_index < n_samples:
+            raise IndexError(
+                f"Landmark index {landmark_index} is out of bounds "
+                f"for a dataset containing {n_samples} points."
+            )
+
+        if landmark_index in seen:
+            raise ValueError(f"Landmark index {landmark_index} appears more than once.")
+
+        seen.add(landmark_index)
+        landmark_indices.append(landmark_index)
+
+    return landmark_indices
 
 
 def compute_landmarks_fps(
@@ -126,8 +242,12 @@ def compute_landmarks_fps(
             return distances_to_all(x, tree, point_index)
 
         landmarks = _select_landmarks_fps(
-            x.shape[0], eps, selected_start_index, distance_function
+            x.shape[0],
+            eps,
+            selected_start_index,
+            distance_function,
         )
+
         cover = build_cover_ball_tree(
             x,
             landmarks,
@@ -137,29 +257,50 @@ def compute_landmarks_fps(
             normalized_metric_kwargs,
             tree=tree,
         )
+
         return landmarks, cover
+
+    flat_config = FaissConfig(factory="Flat")
+    backend = create_faiss_backend(
+        x,
+        metric_key,
+        flat_config,
+    )
 
     if metric_key == "euclidean":
-        points, index = create_euclidean_index(x)
 
         def distance_function(point_index: int) -> np.ndarray:
-            return euclidean_distances_to_all(points, index, point_index)
+            return euclidean_distances_to_all(
+                backend.indexed_points,
+                backend.index,
+                point_index,
+            )
 
-        landmarks = _select_landmarks_fps(
-            x.shape[0], eps, selected_start_index, distance_function
-        )
-        cover = build_cover_euclidean(x, landmarks, eps, points=points, index=index)
-        return landmarks, cover
+    else:
 
-    points, index = create_cosine_index(x)
-
-    def distance_function(point_index: int) -> np.ndarray:
-        return cosine_distances_to_all(points, index, point_index)
+        def distance_function(point_index: int) -> np.ndarray:
+            return cosine_distances_to_all(
+                backend.indexed_points,
+                backend.index,
+                point_index,
+            )
 
     landmarks = _select_landmarks_fps(
-        x.shape[0], eps, selected_start_index, distance_function
+        x.shape[0],
+        eps,
+        selected_start_index,
+        distance_function,
     )
-    cover = build_cover_cosine(x, landmarks, eps, points=points, index=index)
+
+    cover = [
+        query_faiss_range(
+            backend,
+            landmark_index,
+            eps,
+        )
+        for landmark_index in landmarks
+    ]
+
     return landmarks, cover
 
 
