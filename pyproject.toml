@@ -38,6 +38,9 @@ dependencies = [
 
 [project.optional-dependencies]
 faiss = ["faiss-cpu>=1.7.4"]
+faiss-gpu = [
+    "faiss-gpu",
+]
 plot = [
   "matplotlib>=3.7",
   "plotly>=5.0",

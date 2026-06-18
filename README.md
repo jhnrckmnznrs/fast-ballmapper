@@ -32,6 +32,12 @@ With CPU FAISS support:
 pip install "fast-ballmapper[faiss]"
 ```
 
+With GPU FAISS support:
+
+```bash
+pip install "fast-ballmapper[faiss-gpu]"
+```
+
 With development tools, plotting, and CPU FAISS support:
 
 ```bash

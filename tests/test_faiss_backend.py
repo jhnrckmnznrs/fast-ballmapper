@@ -2,7 +2,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from fast_ballmapper import compute_landmarks
 from fast_ballmapper.backends import _faiss as faiss_backend
 from fast_ballmapper.backends._faiss import FaissBackend
@@ -311,3 +310,52 @@ def test_flat_index_uses_gpu_when_available():
     assert backend.device == "gpu"
     assert backend.gpu_resources is not None
     assert backend.gpu_error is None
+
+
+def test_flat_range_query_can_be_emulated_with_full_search(monkeypatch):
+    class FakeFlatIndex:
+        def range_search(self, query, radius):
+            raise RuntimeError("range search not implemented")
+
+        def search(self, query, k):
+            distances = np.array([[0.0, 0.01, 18.0]], dtype=np.float32)
+            indices = np.array([[0, 1, 2]], dtype=np.int64)
+            return distances, indices
+
+    backend = FaissBackend(
+        original_points=np.array(
+            [
+                [0.0, 0.0],
+                [0.1, 0.0],
+                [3.0, 3.0],
+            ],
+            dtype=np.float32,
+        ),
+        indexed_points=np.array(
+            [
+                [0.0, 0.0],
+                [0.1, 0.0],
+                [3.0, 3.0],
+            ],
+            dtype=np.float32,
+        ),
+        verification_points=np.array(
+            [
+                [0.0, 0.0],
+                [0.1, 0.0],
+                [3.0, 3.0],
+            ],
+            dtype=np.float64,
+        ),
+        index=FakeFlatIndex(),
+        metric="euclidean",
+        config=FaissConfig(factory="Flat"),
+    )
+
+    members = faiss_backend.query_faiss_range(
+        backend,
+        point_index=0,
+        eps=0.25,
+    )
+
+    assert set(map(int, members)) == {0, 1}

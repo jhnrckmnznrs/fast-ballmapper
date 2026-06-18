@@ -286,6 +286,48 @@ def query_faiss_range(
     return np.unique(indices.astype(np.intp, copy=False))
 
 
+def _can_emulate_exact_flat_range_search(backend: FaissBackend) -> bool:
+    """Return whether range search can be emulated exactly by full kNN search."""
+    return backend.config.factory == "Flat" and backend.metric in {
+        "euclidean",
+        "cosine",
+    }
+
+
+def _exact_flat_range_query_via_search(
+    backend: FaissBackend,
+    point_index: int,
+    eps: float,
+) -> np.ndarray:
+    """Emulate exact range search for Flat indexes using all-neighbour search."""
+    query = backend.indexed_points[point_index : point_index + 1]
+    k = len(backend.indexed_points)
+
+    distances, indices = backend.index.search(query, k)
+
+    distances = distances[0]
+    indices = indices[0]
+
+    valid = indices >= 0
+    distances = distances[valid]
+    indices = indices[valid]
+
+    if backend.metric == "euclidean":
+        threshold = np.nextafter(
+            np.float32(eps**2),
+            np.float32(np.inf),
+        )
+        inside = distances < threshold
+    else:
+        threshold = np.nextafter(
+            np.float32(1.0 - eps),
+            np.float32(-np.inf),
+        )
+        inside = distances > threshold
+
+    return indices[inside]
+
+
 def _native_range_query(
     backend: FaissBackend,
     point_index: int,
@@ -304,8 +346,20 @@ def _native_range_query(
             np.float32(-np.inf),
         )
 
-    limits, _, indices = backend.index.range_search(query, radius)
-    return indices[limits[0] : limits[1]]
+    try:
+        limits, _, indices = backend.index.range_search(query, radius)
+        return indices[limits[0] : limits[1]]
+    except RuntimeError as error:
+        if backend.config.query_mode == "auto" and _can_emulate_exact_flat_range_search(
+            backend
+        ):
+            return _exact_flat_range_query_via_search(
+                backend,
+                point_index,
+                eps,
+            )
+
+        raise error
 
 
 def _knn_candidate_query(
