@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+
 from fast_ballmapper import compute_landmarks
 from fast_ballmapper.backends import _faiss as faiss_backend
 from fast_ballmapper.backends._faiss import FaissBackend
