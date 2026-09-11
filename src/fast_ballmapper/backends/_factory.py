@@ -60,7 +60,9 @@ def make_backend(
 
     if key == "ball_tree":
         if faiss_config or hnswlib_config or cuvs_config:
-            raise ValueError("Backend-specific configs do not match method='ball_tree'.")
+            raise ValueError(
+                "Backend-specific configs do not match method='ball_tree'."
+            )
         return BallTreeBackend(x, metric_key, leaf_size, metric_kwargs)
 
     if metric_kwargs:
