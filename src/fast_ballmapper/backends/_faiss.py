@@ -8,8 +8,15 @@ from typing import Any, Literal
 
 import numpy as np
 
+from fast_ballmapper._radius import (
+    closed_ball_radius,
+    faiss_cosine_similarity_threshold,
+    faiss_l2_radius,
+)
 from fast_ballmapper._validation import validate_cosine_points
 from fast_ballmapper.faiss import FaissConfig
+from fast_ballmapper.backends._base import BackendMetadata
+from fast_ballmapper.backends._utils import normalize_point_indices
 
 try:
     import faiss
@@ -77,20 +84,7 @@ def _gpu_cloner_options(config: FaissConfig):
 
 
 def _try_move_index_to_gpu(index, config: FaissConfig):
-    """Move a CPU FAISS index to GPU if possible.
-
-    Returns
-    -------
-    index:
-        The GPU index if conversion succeeds; otherwise the original CPU
-        index when fallback is enabled.
-    device:
-        ``"gpu"`` or ``"cpu"``.
-    resources:
-        The FAISS GPU resources object, or None.
-    error:
-        A string describing why CPU fallback was used, or None.
-    """
+    """Move a CPU FAISS index to GPU if possible."""
     if not _should_try_gpu(config):
         return index, "cpu", None, None
 
@@ -203,8 +197,6 @@ def create_faiss_backend(
         selected_config,
     )
 
-    # Some parameters, such as nprobe, may need to be set again after CPU-to-GPU
-    # conversion because the converted index is a new FAISS object.
     _set_faiss_parameters(index, selected_config.search_params)
 
     return FaissBackend(
@@ -281,7 +273,6 @@ def query_faiss_range(
             eps,
         )
 
-    # A landmark always belongs to its own exact ball.
     indices = np.append(indices, point_index)
     return np.unique(indices.astype(np.intp, copy=False))
 
@@ -313,17 +304,9 @@ def _exact_flat_range_query_via_search(
     indices = indices[valid]
 
     if backend.metric == "euclidean":
-        threshold = np.nextafter(
-            np.float32(eps**2),
-            np.float32(np.inf),
-        )
-        inside = distances < threshold
+        inside = distances < faiss_l2_radius(eps)
     else:
-        threshold = np.nextafter(
-            np.float32(1.0 - eps),
-            np.float32(-np.inf),
-        )
-        inside = distances > threshold
+        inside = distances > faiss_cosine_similarity_threshold(eps)
 
     return indices[inside]
 
@@ -336,15 +319,9 @@ def _native_range_query(
     query = backend.indexed_points[point_index : point_index + 1]
 
     if backend.metric == "euclidean":
-        radius = np.nextafter(
-            np.float32(eps**2),
-            np.float32(np.inf),
-        )
+        radius = faiss_l2_radius(eps)
     else:
-        radius = np.nextafter(
-            np.float32(1.0 - eps),
-            np.float32(-np.inf),
-        )
+        radius = faiss_cosine_similarity_threshold(eps)
 
     try:
         limits, _, indices = backend.index.range_search(query, radius)
@@ -386,17 +363,9 @@ def _knn_candidate_query(
     indices = indices[valid]
 
     if backend.metric == "euclidean":
-        threshold = np.nextafter(
-            np.float32(eps**2),
-            np.float32(np.inf),
-        )
-        inside = distances < threshold
+        inside = distances < faiss_l2_radius(eps)
     else:
-        threshold = np.nextafter(
-            np.float32(1.0 - eps),
-            np.float32(-np.inf),
-        )
-        inside = distances > threshold
+        inside = distances > faiss_cosine_similarity_threshold(eps)
 
     return indices[inside]
 
@@ -421,7 +390,7 @@ def _verify_exact_membership(
         similarities = candidates @ query
         distances = np.maximum(1.0 - similarities, 0.0)
 
-    return candidate_indices[distances < eps]
+    return candidate_indices[distances < closed_ball_radius(eps)]
 
 
 def _normalize_rows_float64(x: np.ndarray) -> np.ndarray:
@@ -529,3 +498,147 @@ def build_cover_faiss(
     backend = create_faiss_backend(x, metric, config)
 
     return [query_faiss_range(backend, int(landmark), eps) for landmark in landmarks]
+
+
+class FaissRangeBackend:
+    """Range-query backend wrapping a configured FAISS index.
+
+    ``metadata.is_exact`` describes the search algorithm, not the numeric
+    representation: FAISS indexes float32 vectors, so boundary decisions can
+    still differ from the float64 reference oracle for adversarially close
+    points.
+    """
+
+    def __init__(
+        self,
+        x: np.ndarray,
+        metric: FaissMetric = "euclidean",
+        config: FaissConfig | None = None,
+    ) -> None:
+        self.state = create_faiss_backend(x, metric, config)
+        self.metric = metric
+        factory = self.state.config.factory
+        is_flat = factory.strip().lower() == "flat"
+        self.metadata = BackendMetadata(
+            name=f"faiss:{factory}",
+            is_exact=is_flat,
+            metric=metric,
+            dtype="float32",
+            device=self.state.device,
+            supports_batch_queries=False,
+            supports_distances_to_all=is_flat,
+            notes=(
+                "Exact search for Flat indexes relative to FAISS float32 storage; "
+                "IVF/HNSW configurations are approximate."
+            ),
+        )
+
+    @property
+    def n_samples(self) -> int:
+        return int(self.state.indexed_points.shape[0])
+
+    def query_radius(
+        self,
+        point_indices: Sequence[int],
+        eps: float,
+    ) -> list[np.ndarray]:
+        indices = normalize_point_indices(point_indices, self.n_samples)
+        return [query_faiss_range(self.state, int(i), eps) for i in indices]
+
+    def distances_to_all(self, point_index: int) -> np.ndarray:
+        if not self.metadata.supports_distances_to_all:
+            raise NotImplementedError(
+                "distances_to_all is supported only by an exact FAISS Flat backend."
+            )
+        if self.metric == "euclidean":
+            return euclidean_distances_to_all(
+                self.state.indexed_points,
+                self.state.index,
+                int(point_index),
+            )
+        return cosine_distances_to_all(
+            self.state.indexed_points,
+            self.state.index,
+            int(point_index),
+        )
+
+
+class FaissFlatBackend(FaissRangeBackend):
+    """Convenience exact-search FAISS Flat backend."""
+
+    def __init__(
+        self,
+        x: np.ndarray,
+        metric: FaissMetric = "euclidean",
+        *,
+        device: str = "cpu",
+        exact_verify: bool = False,
+    ) -> None:
+        super().__init__(
+            x,
+            metric,
+            FaissConfig(
+                factory="Flat",
+                device=device,  # type: ignore[arg-type]
+                exact_verify=exact_verify,
+            ),
+        )
+
+
+class FaissIVFBackend(FaissRangeBackend):
+    """Convenience FAISS IVF-Flat approximate backend."""
+
+    def __init__(
+        self,
+        x: np.ndarray,
+        metric: FaissMetric = "euclidean",
+        *,
+        nlist: int = 256,
+        nprobe: int = 16,
+        candidate_k: int | None = None,
+        device: str = "cpu",
+        exact_verify: bool = False,
+    ) -> None:
+        query_mode = "auto" if candidate_k is None else "knn"
+        super().__init__(
+            x,
+            metric,
+            FaissConfig(
+                factory=f"IVF{int(nlist)},Flat",
+                search_params={"nprobe": int(nprobe)},
+                candidate_k=candidate_k,
+                query_mode=query_mode,
+                device=device,  # type: ignore[arg-type]
+                exact_verify=exact_verify,
+            ),
+        )
+
+
+class FaissHNSWBackend(FaissRangeBackend):
+    """Convenience FAISS HNSW approximate backend."""
+
+    def __init__(
+        self,
+        x: np.ndarray,
+        metric: FaissMetric = "euclidean",
+        *,
+        m: int = 32,
+        ef_search: int = 128,
+        ef_construction: int = 200,
+        candidate_k: int = 1024,
+        device: str = "cpu",
+        exact_verify: bool = True,
+    ) -> None:
+        super().__init__(
+            x,
+            metric,
+            FaissConfig(
+                factory=f"HNSW{int(m)}",
+                construction_params={"efConstruction": int(ef_construction)},
+                search_params={"efSearch": int(ef_search)},
+                query_mode="knn",
+                candidate_k=int(candidate_k),
+                device=device,  # type: ignore[arg-type]
+                exact_verify=exact_verify,
+            ),
+        )

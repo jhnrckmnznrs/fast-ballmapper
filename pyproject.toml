@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fast-ballmapper"
-version = "0.1.0"
-description = "Fast Ball Mapper construction with BallTree and optional FAISS backends"
+version = "0.2.0"
+description = "Auditable Ball Mapper construction with exact and approximate range-query backends"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -18,6 +18,7 @@ keywords = [
   "ball-mapper",
   "topological-data-analysis",
   "point-cloud",
+  "range-query",
   "networkx",
 ]
 classifiers = [
@@ -34,19 +35,30 @@ dependencies = [
   "networkx>=3.0",
   "numpy>=1.23",
   "scikit-learn>=1.2",
+  "scipy>=1.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jhnrckmnznrs/fast-ballmapper"
+Repository = "https://github.com/jhnrckmnznrs/fast-ballmapper"
+Issues = "https://github.com/jhnrckmnznrs/fast-ballmapper/issues"
+Changelog = "https://github.com/jhnrckmnznrs/fast-ballmapper/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 faiss = ["faiss-cpu>=1.7.4"]
 faiss-gpu = [
     "faiss-gpu",
 ]
+hnswlib = ["hnswlib>=0.8"]
+cuvs-cu12 = ["cuvs-cu12; python_version >= '3.11'", "cupy-cuda12x; python_version >= '3.11'"]
+cuvs-cu13 = ["cuvs-cu13; python_version >= '3.11'", "cupy-cuda13x; python_version >= '3.11'"]
 plot = [
   "matplotlib>=3.7",
   "plotly>=5.0",
 ]
 all = [
   "faiss-cpu>=1.7.4",
+  "hnswlib>=0.8",
   "matplotlib>=3.7",
   "plotly>=5.0",
 ]
