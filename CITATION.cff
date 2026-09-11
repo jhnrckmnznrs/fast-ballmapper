@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use fast-ballmapper in research, please cite the software and the associated Ball Mapper methodology."
+title: "fast-ballmapper"
+type: software
+version: 0.2.0
+authors:
+  - family-names: Manzanares
+    given-names: John Rick Dolor
+  - family-names: Bulauan
+    given-names: Jay-Anne Baga
+repository-code: "https://github.com/jhnrckmnznrs/fast-ballmapper"
+url: "https://github.com/jhnrckmnznrs/fast-ballmapper"
+license: MIT

@@ -53,7 +53,6 @@ class FaissConfig:
     candidate_k: int | None = None
     exact_verify: bool = False
 
-    # Device settings.
     device: FaissDevice = "cpu"
     gpu_device: int = 0
     gpu_fallback_to_cpu: bool = True

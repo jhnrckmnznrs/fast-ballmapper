@@ -76,9 +76,10 @@ def choose_epsilon(
 
     epsilon = float(np.median(boundary_distances))
 
-    # Ball Mapper uses open balls. Move the threshold slightly upward so
-    # points exactly at the selected boundary are included numerically.
-    return float(np.nextafter(epsilon, np.inf))
+    # Keep epsilon as the calibrated mathematical radius.  Closed-ball
+    # inclusivity is implemented once inside the exact/query backend via the
+    # centralized nextafter threshold policy.
+    return epsilon
 
 
 def range_metrics(

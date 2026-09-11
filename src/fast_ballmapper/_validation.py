@@ -48,23 +48,29 @@ def normalize_backend_options(
     metric_key = metric.lower()
     normalized_metric_kwargs = dict(metric_kwargs or {})
 
-    # ``balltree`` is accepted as a forgiving alias, while ``ball_tree`` is the
-    # documented snake_case spelling.
     if method_key == "balltree":
         method_key = "ball_tree"
 
-    if method_key not in {"ball_tree", "faiss"}:
-        raise ValueError("method must be 'ball_tree' or 'faiss'.")
+    if method_key in {"brute", "bruteforce"}:
+        method_key = "brute_force"
+
+    if method_key not in {"ball_tree", "brute_force", "faiss"}:
+        raise ValueError(
+            "method must be 'ball_tree', 'brute_force', or 'faiss'."
+        )
 
     if method_key == "ball_tree":
         validate_leaf_size(leaf_size)
     else:
         if metric_key not in {"euclidean", "cosine"}:
             raise ValueError(
-                "For method='faiss', metric must be 'euclidean' or 'cosine'."
+                f"For method={method_key!r}, metric must be "
+                "'euclidean' or 'cosine'."
             )
         if normalized_metric_kwargs:
-            raise ValueError("metric_kwargs is supported only with method='ball_tree'.")
+            raise ValueError(
+                "metric_kwargs is supported only with method='ball_tree'."
+            )
 
     return method_key, metric_key, normalized_metric_kwargs
 
