@@ -66,7 +66,9 @@ class BruteForceBackend:
         return int(self.points.shape[0])
 
     def distances_to_all(self, point_index: int) -> np.ndarray:
-        return distances_from_reference_point(self.points, int(point_index), self.metric)
+        return distances_from_reference_point(
+            self.points, int(point_index), self.metric
+        )
 
     def query_radius(
         self,
