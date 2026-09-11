@@ -47,7 +47,11 @@ def _resolve_backend(
     backend: RangeQueryBackend | None,
 ) -> RangeQueryBackend:
     if backend is not None:
-        if faiss_config is not None or hnswlib_config is not None or cuvs_config is not None:
+        if (
+            faiss_config is not None
+            or hnswlib_config is not None
+            or cuvs_config is not None
+        ):
             raise ValueError(
                 "Backend-specific configuration must be supplied when constructing "
                 "the backend object, not together with backend=."
