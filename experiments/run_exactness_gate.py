@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("experiments/results/raw/exactness_gate_closed_ball.csv"),
     )
+    parser.add_argument("--smoke", action="store_true", help="Use one small CI case.")
     return parser.parse_args()
 
 
@@ -165,6 +166,8 @@ def run_case(
         "ckdtree_membership_precision": ckdtree_audit.membership_precision,
         "ckdtree_membership_recall": ckdtree_audit.membership_recall,
         "ckdtree_membership_jaccard": ckdtree_audit.membership_jaccard,
+        "ckdtree_false_negative_count": ckdtree_audit.membership_false_negatives,
+        "ckdtree_false_positive_count": ckdtree_audit.membership_false_positives,
         "edge_sets_equal": normalized_edges(reference_graph)
         == normalized_edges(balltree_graph),
         "ckdtree_edge_sets_equal": normalized_edges(reference_graph)
@@ -179,12 +182,33 @@ def run_case(
     }
 
 
+def gate_passed(row: dict[str, object]) -> bool:
+    """Reject every landmark, membership, or edge mismatch, including cKDTree."""
+    equalities = (
+        "landmark_indices_equal",
+        "ckdtree_landmark_indices_equal",
+        "selected_cover_equal",
+        "ckdtree_selected_cover_equal",
+        "edge_sets_equal",
+        "ckdtree_edge_sets_equal",
+    )
+    errors = (
+        "false_negative_count",
+        "false_positive_count",
+        "ckdtree_false_negative_count",
+        "ckdtree_false_positive_count",
+    )
+    return all(row[key] for key in equalities) and all(row[key] == 0 for key in errors)
+
+
 def main() -> None:
     args = parse_args()
     cases = [
         (1000, 16, 0, 20),
         (5000, 32, 0, 50),
     ]
+    if args.smoke:
+        cases = [(200, 4, 0, 12)]
     rows = [run_case(*case) for case in cases]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", newline="", encoding="utf-8") as handle:
@@ -192,6 +216,8 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
     print(f"wrote: {args.output}")
+    if not all(gate_passed(row) for row in rows):
+        raise SystemExit("Exactness gate FAILED; inspect the saved mismatch counts.")
 
 
 if __name__ == "__main__":

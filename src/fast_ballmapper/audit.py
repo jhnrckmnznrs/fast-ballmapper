@@ -275,7 +275,10 @@ def _audit_mean_colors(
     approximate_sets: list[set[int]],
     values: np.ndarray,
 ) -> ColorAudit:
-    scalar_values = np.asarray(values)
+    # Accumulate means in the same float64 precision used for oscillations and
+    # bounds. Casting a float32 mean afterwards can create spurious violations
+    # when the finite-set color bound is attained exactly.
+    scalar_values = np.asarray(values, dtype=np.float64)
     if scalar_values.ndim != 1:
         raise ValueError("values must be a one-dimensional array of scalar colors.")
 

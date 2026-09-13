@@ -19,6 +19,11 @@ The package centralizes floating-point boundary handling in `_radius.py` so
 that APIs using strict predicates and APIs using inclusive predicates implement
 the same mathematical closed ball.
 
+This is a comparison convention, not an arithmetic error bound. Equality across
+representations or distance kernels is checked empirically. A supplied backend
+must index the same data and row order as `x`; the generic protocol can check
+sample count but cannot establish data identity for an arbitrary custom engine.
+
 ## Exact backends
 
 - `BruteForceBackend`: transparent float64 reference oracle.
@@ -36,6 +41,20 @@ FAISS IVF/HNSW, hnswlib, and cuVS CAGRA may omit true members. Candidate-based
 adapters make `candidate_k` explicit and apply the same closed-ball filter to
 returned candidates. This separates candidate-generation error from radius
 verification.
+
+`FaissRangeBackend` uses true bounded native batches for fixed landmarks. A Flat
+index with `query_mode="knn"` and `candidate_k < n` is also approximate. With
+`exact_verify=True`, every retrieved kNN ID is verified against original float64
+coordinates before radius rejection. A native range query can already have
+omitted candidates before verification. Scalar and batched FAISS kernels can
+make different numerical boundary decisions.
+
+The generic greedy loop scans the observation order once and explicitly inserts
+each landmark into its own neighborhood. For an exact ordered landmark sequence
+with arbitrary candidate omissions, use `compute_landmarks_verified`: verified
+candidate marking is supplemented by exhaustive current-landmark coverage tests.
+Its partial memberships cover the observations but need not reconstruct all
+edges; `build_cover_blocked` provides complete reference-predicate memberships.
 
 ## Farthest-point sampling
 

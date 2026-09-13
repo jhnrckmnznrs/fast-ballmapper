@@ -43,6 +43,17 @@ from fast_ballmapper.landmarks import (
     compute_landmarks,
     compute_landmarks_fps,
 )
+from fast_ballmapper.verified import (
+    VerifiedSelection,
+    build_cover_blocked,
+    compute_landmarks_verified,
+)
+from fast_ballmapper.sparse import (
+    ComponentCertificate,
+    build_mapper_sparse,
+    certify_component_preservation,
+    cover_statistics,
+)
 
 try:
     __version__ = version("fast-ballmapper")
@@ -50,6 +61,13 @@ except PackageNotFoundError:  # pragma: no cover - source checkout fallback
     __version__ = "0.2.0"
 
 __all__ = [
+    "VerifiedSelection",
+    "ComponentCertificate",
+    "build_cover_blocked",
+    "build_mapper_sparse",
+    "certify_component_preservation",
+    "compute_landmarks_verified",
+    "cover_statistics",
     "ApproximationAudit",
     "BackendMetadata",
     "BallMembershipAudit",

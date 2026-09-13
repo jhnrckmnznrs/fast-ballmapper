@@ -40,8 +40,11 @@ class FaissConfig:
         Number of candidates requested when ``query_mode="knn"`` or when
         automatic fallback is required.
     exact_verify:
-        Recompute exact distances for candidates and remove candidates
-        outside the requested ball.
+        Filter returned candidates using original-coordinate float64 distances.
+        This cannot recover observations omitted by the candidate search.
+    query_batch_size:
+        Maximum queries per native FAISS call. Greedy selection still submits
+        one query at a time; fixed-landmark cover construction can use batches.
     """
 
     factory: str = "Flat"
@@ -58,3 +61,4 @@ class FaissConfig:
     gpu_fallback_to_cpu: bool = True
     gpu_use_float16: bool = False
     gpu_temp_memory: int | None = None
+    query_batch_size: int = 64

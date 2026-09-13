@@ -6,6 +6,11 @@ Ball Mapper repeatedly asks one computational question: for a landmark and a rad
 
 Version `0.2.0` introduces a common range query backend interface, independent exact CPU implementations, approximation audits, witness counts, and a unified closed ball convention.
 
+The development branch also includes verified greedy selection, blocked sparse
+witness construction, and a reproducible CPU experiment matrix. See the
+[experiment guide](experiments/README.md) for installation, validation gates,
+comparison commands, and the measurements needed for the companion paper.
+
 ## Main Features
 
 The package provides:
@@ -33,6 +38,13 @@ Different libraries expose different numerical comparison rules. Some radius API
 When a backend uses a strict comparison, the implementation replaces `eps` by the next representable floating point value above it through `np.nextafter`. It then applies the strict comparison at that outward rounded threshold. Therefore, a value represented exactly as `eps` is included, while the next representable value above `eps` is excluded.
 
 This rule is part of the numerical semantics of the package. It is not a user selected tolerance, and no problem dependent `atol` or `rtol` is introduced.
+
+The inclusive-comparison equivalence assumes the same dtype and the same
+reported-distance computation. `nextafter` does not bound distance arithmetic
+error or guarantee agreement between float32 FAISS and float64 reference
+distances. Audit output equality at the chosen radius, including when changing
+batch size. The cosine option uses `1 - cosine_similarity`, which is a
+dissimilarity and does not satisfy the triangle inequality in general.
 
 ## Installation
 
