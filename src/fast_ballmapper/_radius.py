@@ -4,8 +4,9 @@ Ball Mapper uses closed metric balls, ``d(x, l) <= eps``. Some range-query
 APIs implement a strict threshold internally. For those APIs we query at the
 smallest representable radius above ``eps`` and retain candidates whose
 reported distance is strictly below that expanded threshold. This is
-equivalent to an inclusive comparison at ``eps`` for finite floating-point
-distances while avoiding an arbitrary numerical tolerance.
+equivalent to an inclusive comparison at ``eps`` when distances and threshold
+share the same floating-point representation. It does not bound the arithmetic
+error in reported distances or guarantee float32/float64 agreement.
 """
 
 from __future__ import annotations

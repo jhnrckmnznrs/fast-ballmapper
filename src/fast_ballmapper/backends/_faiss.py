@@ -159,9 +159,19 @@ def create_faiss_backend(
     _require_faiss()
 
     selected_config = config or FaissConfig()
-    original_points = np.asarray(x)
+    if selected_config.query_mode not in {"auto", "range", "knn"}:
+        raise ValueError("query_mode must be 'auto', 'range', or 'knn'.")
+    if (
+        isinstance(selected_config.query_batch_size, (bool, np.bool_))
+        or not isinstance(selected_config.query_batch_size, (int, np.integer))
+        or selected_config.query_batch_size <= 0
+    ):
+        raise ValueError("query_batch_size must be a positive integer.")
+    original_points = np.array(x, copy=True)
 
-    indexed_points = np.ascontiguousarray(x, dtype=np.float32)
+    # normalize_L2 is in-place. Keep index and verification snapshots separate
+    # from each other and from the caller's possibly contiguous float32 input.
+    indexed_points = np.array(x, dtype=np.float32, order="C", copy=True)
 
     if metric == "cosine":
         validate_cosine_points(indexed_points)
@@ -279,7 +289,7 @@ def query_faiss_range(
 
 def _can_emulate_exact_flat_range_search(backend: FaissBackend) -> bool:
     """Return whether range search can be emulated exactly by full kNN search."""
-    return backend.config.factory == "Flat" and backend.metric in {
+    return backend.config.factory.strip().lower() == "flat" and backend.metric in {
         "euclidean",
         "cosine",
     }
@@ -302,6 +312,9 @@ def _exact_flat_range_query_via_search(
     valid = indices >= 0
     distances = distances[valid]
     indices = indices[valid]
+
+    if backend.config.exact_verify:
+        return indices
 
     if backend.metric == "euclidean":
         inside = distances < faiss_l2_radius(eps)
@@ -362,12 +375,70 @@ def _knn_candidate_query(
     distances = distances[valid]
     indices = indices[valid]
 
+    if backend.config.exact_verify:
+        # Quantized search distances can overestimate the true distance.
+        # Verification must see every retrieved ID, not a prefiltered subset.
+        return indices
+
     if backend.metric == "euclidean":
         inside = distances < faiss_l2_radius(eps)
     else:
         inside = distances > faiss_cosine_similarity_threshold(eps)
 
     return indices[inside]
+
+
+def _query_faiss_batch(
+    backend: FaissBackend, point_indices: np.ndarray, eps: float
+) -> list[np.ndarray]:
+    """Issue one native range/kNN call for a bounded batch of fixed queries."""
+    config = backend.config
+    queries = np.ascontiguousarray(backend.indexed_points[point_indices])
+    radius = (
+        faiss_l2_radius(eps)
+        if backend.metric == "euclidean"
+        else faiss_cosine_similarity_threshold(eps)
+    )
+    candidates = None
+    k = config.candidate_k
+    if config.query_mode in {"auto", "range"}:
+        try:
+            limits, _, ids = backend.index.range_search(queries, radius)
+            candidates = [ids[limits[i] : limits[i + 1]] for i in range(len(queries))]
+        except RuntimeError as error:
+            if config.query_mode == "range":
+                raise RuntimeError(
+                    "The FAISS index does not support native range search."
+                ) from error
+            if _can_emulate_exact_flat_range_search(backend):
+                k = len(backend.indexed_points)
+            elif k is None:
+                raise RuntimeError(
+                    "The FAISS index does not support native range search; "
+                    "provide candidate_k for automatic kNN fallback."
+                ) from error
+    if candidates is None:
+        if k is None or k <= 0:
+            raise ValueError("candidate_k must be positive for kNN queries.")
+        distances, ids = backend.index.search(
+            queries, min(k, len(backend.indexed_points))
+        )
+        candidates = []
+        for row_ids, row_distances in zip(ids, distances, strict=True):
+            keep = row_ids >= 0
+            if not config.exact_verify:
+                keep &= (
+                    row_distances < radius
+                    if backend.metric == "euclidean"
+                    else row_distances > radius
+                )
+            candidates.append(row_ids[keep])
+    result = []
+    for query_index, ids in zip(point_indices, candidates, strict=True):
+        if config.exact_verify:
+            ids = _verify_exact_membership(backend, int(query_index), ids, eps)
+        result.append(np.unique(np.append(ids, query_index)).astype(np.intp))
+    return result
 
 
 def _verify_exact_membership(
@@ -519,17 +590,27 @@ class FaissRangeBackend:
         self.metric = metric
         factory = self.state.config.factory
         is_flat = factory.strip().lower() == "flat"
+        config = self.state.config
+        exhaustive = is_flat and (
+            config.query_mode != "knn"
+            or (config.candidate_k is not None and config.candidate_k >= len(x))
+        )
         self.metadata = BackendMetadata(
             name=f"faiss:{factory}",
-            is_exact=is_flat,
+            is_exact=exhaustive,
             metric=metric,
-            dtype="float32",
+            dtype=(
+                "float16"
+                if self.state.device == "gpu" and config.gpu_use_float16
+                else "float32"
+            ),
             device=self.state.device,
-            supports_batch_queries=False,
+            supports_batch_queries=True,
             supports_distances_to_all=is_flat,
             notes=(
-                "Exact search for Flat indexes relative to FAISS float32 storage; "
-                "IVF/HNSW configurations are approximate."
+                "Flat radius/all-neighbor search is exhaustive; capped kNN and "
+                "IVF/HNSW are approximate. Precision and batch kernels can change "
+                "boundary decisions; float64 verification only filters candidates."
             ),
         )
 
@@ -543,7 +624,15 @@ class FaissRangeBackend:
         eps: float,
     ) -> list[np.ndarray]:
         indices = normalize_point_indices(point_indices, self.n_samples)
-        return [query_faiss_range(self.state, int(i), eps) for i in indices]
+        result = []
+        batch_size = self.state.config.query_batch_size
+        for start in range(0, len(indices), batch_size):
+            batch = indices[start : start + batch_size]
+            if len(batch) == 1:
+                result.append(query_faiss_range(self.state, int(batch[0]), eps))
+            else:
+                result.extend(_query_faiss_batch(self.state, batch, eps))
+        return result
 
     def distances_to_all(self, point_index: int) -> np.ndarray:
         if not self.metadata.supports_distances_to_all:

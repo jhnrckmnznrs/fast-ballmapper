@@ -26,6 +26,9 @@ htmlcov/
 .DS_Store
 
 # Generated experiment outputs
+experiments/results/*
+!experiments/results/raw/
+!experiments/results/figures/
 experiments/results/raw/*
 !experiments/results/raw/.gitkeep
 experiments/results/figures/*

@@ -3,6 +3,13 @@ import fast_ballmapper
 
 def test_public_api_uses_snake_case():
     expected = {
+        "VerifiedSelection",
+        "ComponentCertificate",
+        "build_cover_blocked",
+        "build_mapper_sparse",
+        "certify_component_preservation",
+        "compute_landmarks_verified",
+        "cover_statistics",
         "ApproximationAudit",
         "BackendMetadata",
         "BallMembershipAudit",

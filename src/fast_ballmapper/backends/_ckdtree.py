@@ -17,19 +17,28 @@ except ImportError:  # pragma: no cover - optional at import time
 
 
 class CKDTreeBackend:
-    """Exact Euclidean CPU range-query backend using SciPy ``cKDTree``."""
+    """Euclidean cKDTree search with optional inflated approximate candidates.
+
+    With ``candidate_eps=u``, query radius (1+u)*eps and filter at eps. Under
+    SciPy's ideal pruning contract this is a complete candidate superset.
+    Floating-point boundary agreement must still be audited against the oracle.
+    """
 
     def __init__(
         self,
         x: np.ndarray,
         *,
         leaf_size: int = 16,
+        candidate_eps: float = 0.0,
     ) -> None:
         if cKDTree is None:
             raise ImportError("SciPy is required for method='ckdtree'.")
         if leaf_size <= 0:
             raise ValueError("leaf_size must be positive.")
-        self.x = np.asarray(x, dtype=np.float64)
+        if not np.isfinite(candidate_eps) or candidate_eps < 0:
+            raise ValueError("candidate_eps must be finite and non-negative.")
+        self.candidate_eps = float(candidate_eps)
+        self.x = np.array(x, dtype=np.float64, copy=True)
         self.tree = cKDTree(self.x, leafsize=int(leaf_size))
         self.metadata = BackendMetadata(
             name="ckdtree",
@@ -39,7 +48,10 @@ class CKDTreeBackend:
             device="cpu",
             supports_batch_queries=True,
             supports_distances_to_all=True,
-            notes="Independent exact SciPy cKDTree implementation.",
+            notes=(
+                f"SciPy cKDTree inflated candidate search, u={candidate_eps}; "
+                "filtered with direct float64 norms. Audit numerical boundaries."
+            ),
         )
 
     @property
@@ -53,7 +65,12 @@ class CKDTreeBackend:
     ) -> list[np.ndarray]:
         indices = normalize_point_indices(point_indices, self.n_samples)
         radius = closed_ball_radius(eps)
-        raw = self.tree.query_ball_point(self.x[indices], r=radius)
+        candidate_radius = radius * (1.0 + self.candidate_eps)
+        if not np.isfinite(candidate_radius):
+            raise ValueError("Inflated cKDTree radius overflowed; rescale inputs.")
+        raw = self.tree.query_ball_point(
+            self.x[indices], r=candidate_radius, eps=self.candidate_eps
+        )
         result: list[np.ndarray] = []
         for query_index, candidates in zip(indices, raw, strict=True):
             candidate_array = np.asarray(candidates, dtype=np.intp)

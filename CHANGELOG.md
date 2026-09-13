@@ -2,6 +2,34 @@
 
 All notable changes to `fast-ballmapper` are documented here.
 
+## Unreleased
+
+### Fixed
+
+- Preserve caller inputs and original-coordinate verification snapshots when
+  constructing cosine FAISS indexes.
+- Mark capped Flat kNN searches approximate and record actual GPU storage dtype.
+- Verify every retrieved kNN candidate before radius rejection when exact
+  verification is enabled, avoiding rejection based on quantized overestimates.
+- Accumulate audit color means in float64 to avoid spurious tight-bound failures
+  from float32 accumulation.
+- Make generic greedy selection progress when a custom backend omits the query
+  point; reject noninteger observation IDs rather than truncating them.
+- Fail the exactness gate on mismatches, including cKDTree membership errors.
+
+### Added
+
+- Bounded native FAISS query batches for fixed landmarks, configured by
+  `FaissConfig.query_batch_size`; greedy decisions remain sequential.
+- `compute_landmarks_verified`, `VerifiedSelection`, and `build_cover_blocked`.
+- `build_mapper_sparse`, `cover_statistics`, and a witness-budget component
+  certificate with integer counts and bounded sparse row products.
+- Inflated and filtered cKDTree candidate search via `candidate_eps`.
+- A CPU experiment runner with three explicit generators, seeds, repetitions,
+  isolated processes, stage timings, memory, provenance, and correctness gates.
+- Independent-distance, adversarial-candidate, wide-witness, and small observed
+  nerve contiguity tests, plus experiment smoke checks in CI.
+
 ## 0.2.0 - 2026-09-11
 
 ### Added

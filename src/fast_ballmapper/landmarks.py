@@ -20,6 +20,7 @@ from fast_ballmapper.backends import (
     make_backend,
 )
 from fast_ballmapper.faiss import FaissConfig
+from fast_ballmapper.backends._utils import normalize_point_indices
 
 Backend = Literal[
     "ball_tree",
@@ -119,11 +120,16 @@ def compute_landmarks(
     uncovered = np.ones(x.shape[0], dtype=bool)
     landmarks: list[int] = []
     cover: list[np.ndarray] = []
-    while np.any(uncovered):
-        landmark_index = int(np.argmax(uncovered))
+    for landmark_index in range(x.shape[0]):
+        if not uncovered[landmark_index]:
+            continue
         landmarks.append(landmark_index)
         members = selected_backend.query_radius([landmark_index], eps)[0]
-        cover.append(np.asarray(members, dtype=np.intp))
+        members = normalize_point_indices(members, x.shape[0])
+        # A custom/approximate oracle may omit its query point. Ensure progress
+        # and the closed-ball self-membership contract even in that case.
+        members = np.unique(np.append(members, landmark_index))
+        cover.append(members)
         uncovered[members] = False
     return landmarks, cover
 
