@@ -10,7 +10,8 @@ every run.
 ## Cause
 
 Each failing run added the same single membership: observation 653 in the ball
-centered at observation 5 (ball position 4). The saved numerical values were:
+centered at observation 5 (ball position 4). The recorded radius and distances
+reproduced from the saved inputs were:
 
 | Quantity | Value |
 | --- | --- |
