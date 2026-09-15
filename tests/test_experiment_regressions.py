@@ -1,5 +1,7 @@
 import importlib.util
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -7,6 +9,98 @@ import pytest
 from fast_ballmapper import CKDTreeBackend, FaissConfig, FaissRangeBackend, build_cover
 from fast_ballmapper import compare_covers
 from fast_ballmapper.backends import _faiss
+
+
+def _paper_runner():
+    path = Path(__file__).resolve().parents[1] / "experiments/run_paper_experiments.py"
+    spec = importlib.util.spec_from_file_location("paper_runner", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("method", ["flat_scalar", "flat_batch"])
+def test_paper_flat_removes_reported_gaussian_boundary_false_positive(method):
+    pytest.importorskip("faiss")
+    # Original observation 653 relative to landmark 5 in the supplied pilot.
+    # Its float64 distance exceeds epsilon by about 2.0742e-7, while native
+    # float32 FAISS can include it. Generate just the prefix containing the pair.
+    x = np.random.default_rng(0).normal(size=(654, 32)).astype(np.float32)[[5, 653]]
+    eps = 5.995250733644709
+    assert np.linalg.norm(x[0].astype(float) - x[1].astype(float)) > eps
+    backend = _paper_runner().backend_for(x, method, {"batch_size": 64, "seed": 0})
+    assert list(map(set, backend.query_radius([0, 1], eps))) == [{0}, {1}]
+
+
+@pytest.mark.parametrize("method", ["flat_scalar", "flat_batch", "ivf", "hnsw"])
+def test_paper_gate_still_rejects_one_extra_membership(method):
+    row = {
+        "method": method,
+        "graph_witness_counts_equal": True,
+        "color_bound_violations": 0,
+        "landmark_sequence_equal": True,
+        "fixed_cover_equal": False,
+        "membership_false_positives": 1,
+        "membership_false_negatives": 0,
+        "covers_all_observations": True,
+    }
+    failures = _paper_runner().validation_failures(row)
+    assert len(failures) == 1
+    assert "fp=1" in failures[0]
+
+
+def test_paper_gate_retains_partial_cover_and_landmark_requirements():
+    module = _paper_runner()
+    row = {
+        "method": "verified_none_partial",
+        "graph_witness_counts_equal": True,
+        "color_bound_violations": 0,
+        "landmark_sequence_equal": True,
+        "fixed_cover_equal": False,
+        "membership_false_positives": 0,
+        "membership_false_negatives": 5,
+        "covers_all_observations": True,
+    }
+    assert module.validation_failures(row) == []
+    row["covers_all_observations"] = False
+    assert module.validation_failures(row) == [
+        "verified_cover_does_not_cover_all_observations"
+    ]
+    row.update(
+        method="flat_scalar",
+        fixed_cover_equal=True,
+        membership_false_negatives=0,
+        landmark_sequence_equal=False,
+    )
+    assert module.validation_failures(row) == ["landmark_sequence_mismatch"]
+
+
+def test_paper_worker_exception_retains_identity_and_reason(tmp_path, monkeypatch):
+    module = _paper_runner()
+    job = {
+        "dataset": "gaussian",
+        "seed": 0,
+        "repeat": 0,
+        "method": "flat_scalar",
+        "graph_method": "sparse",
+        "result_path": str(tmp_path / "run_00000.json"),
+    }
+    job_path = tmp_path / "job.json"
+    job_path.write_text(json.dumps(job))
+    monkeypatch.setattr(module, "parse_args", lambda: SimpleNamespace(worker=job_path))
+
+    def fail(job):
+        raise RuntimeError("backend failed")
+
+    monkeypatch.setattr(module, "run_worker", fail)
+    module.main()
+    result = json.loads(Path(job["result_path"]).read_text())
+    assert result["row"]["dataset"] == "gaussian"
+    assert result["row"]["graph_method"] == "sparse"
+    assert result["row"]["result_file"] == "run_00000.json"
+    assert result["row"]["gate_passed"] is False
+    assert result["row"]["validation_failures"] == ["RuntimeError: backend failed"]
+    assert result["row"]["error"] == result["error"]
 
 
 def test_exactness_gate_rejects_membership_mismatch_even_when_graph_agrees():
