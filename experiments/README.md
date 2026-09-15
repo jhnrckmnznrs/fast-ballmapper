@@ -80,7 +80,7 @@ not independent datasets.
 | `brute_force` | Float64 exhaustive greedy | Exhaustive float64 |
 | `ball_tree`, `ckdtree` | Tree greedy | Batched tree queries |
 | `ckdtree_inflated` | Inflated candidates, filtered | Same, `--candidate-eps` controls inflation |
-| `flat_scalar`, `flat_batch` | Sequential FAISS Flat greedy | Batch size 1 or `--batch-size` |
+| `flat_scalar`, `flat_batch` | Sequential FAISS Flat greedy with float64 filtering | Batch size 1 or `--batch-size`, with float64 filtering |
 | `ivf`, `hnsw` | Approximate greedy, measured separately | Queries at the common reference landmarks |
 | `verified_none_partial` | Complete coverage tests, no candidate provider | Verified partial cover |
 | `verified_none_complete` | Same | Additional blocked exhaustive reconstruction |
@@ -138,7 +138,11 @@ reported distances in the same representation. It does not bound arithmetic,
 normalization, squaring, float32 conversion, or quantization error. Batched FAISS
 can select a different distance kernel and differ at the numerical boundary.
 The runner records the FAISS BLAS threshold and audits each output against the
-float64 reference. A candidate filter cannot restore points omitted by a native
+float64 reference. Both Flat configurations use `exact_verify=True`: returned
+candidates are filtered using original-coordinate float64 norms, and that cost
+is included in selection/membership timings. Preserve old unverified Flat rows
+as a separate configuration; their timings are not measurements of this filtered
+configuration. A candidate filter cannot restore points omitted by a native
 range search. See the [FAISS implementation notes](https://github.com/facebookresearch/faiss/wiki/Implementation-notes).
 
 For cKDTree approximation parameter u, querying at radius (1+u)*epsilon provides
@@ -154,6 +158,12 @@ speedup claim. Approximate/partial runs instead require conservative membership,
 valid color bounds, and correct witness computation; differences in graph
 topology are measured outcomes. `memberships_complete` records observed equality
 to the full reference balls. Requested completion is recorded separately.
+
+On failure, the console and each run's `validation_failures` list identify the
+failed checks. `validation.json` includes a `failed_runs` list with filenames,
+dataset/method identities and reasons. Worker exceptions are also retained in
+the run JSON and summary CSV. Inspect these outputs before rerunning; the
+aggregate failure message alone does not identify the cause.
 
 The component certificate uses the *observed* per-ball omission counts as budgets
 and the full exact reference. It is an a posteriori sufficient certificate;

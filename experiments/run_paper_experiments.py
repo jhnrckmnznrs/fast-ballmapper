@@ -165,6 +165,10 @@ def backend_for(x, method, settings):
     if method.startswith("flat"):
         config.update(
             factory="Flat",
+            # The experiment's reference predicate uses original-coordinate
+            # float64 norms. Exhaustive float32 search alone can add members
+            # at the boundary; include verification in the timed workload.
+            exact_verify=True,
             query_batch_size=(1 if method == "flat_scalar" else settings["batch_size"]),
         )
     elif method == "ivf":
@@ -208,6 +212,31 @@ def _equal_graphs(left, right):
     } == {
         (min(i, j), max(i, j)): a["witness_count"] for i, j, a in right.edges(data=True)
     }
+
+
+def validation_failures(row):
+    """Explain failed checks without relaxing exact-output requirements."""
+    failures = []
+    method = row["method"]
+    if not row["graph_witness_counts_equal"]:
+        failures.append("graph_witness_counts_mismatch")
+    if row["color_bound_violations"]:
+        failures.append(f"color_bound_violations={row['color_bound_violations']}")
+    if method not in {"ivf", "hnsw"} and not method.endswith("partial"):
+        if not row["landmark_sequence_equal"]:
+            failures.append("landmark_sequence_mismatch")
+        if not row["fixed_cover_equal"]:
+            failures.append(
+                f"membership_mismatch: fp={row['membership_false_positives']}, "
+                f"fn={row['membership_false_negatives']}"
+            )
+    elif row["membership_false_positives"]:
+        failures.append(
+            f"nonconservative_memberships: fp={row['membership_false_positives']}"
+        )
+    if method.startswith("verified") and not row["covers_all_observations"]:
+        failures.append("verified_cover_does_not_cover_all_observations")
+    return failures
 
 
 def run_worker(job):
@@ -337,16 +366,8 @@ def run_worker(job):
             bucket = bins.setdefault(key, {"reference_edges": 0, "surviving_edges": 0})
             bucket["reference_edges"] += 1
             bucket["surviving_edges"] += int(change.approximate_count > 0)
-    row["gate_passed"] = bool(
-        graph_agrees
-        and row["color_bound_violations"] == 0
-        and (
-            row["exact_output_match"]
-            if method not in {"ivf", "hnsw"} and not method.endswith("partial")
-            else audit.membership_false_positives == 0
-        )
-        and (len(covered) == len(x) if method.startswith("verified") else True)
-    )
+    row["validation_failures"] = validation_failures(row)
+    row["gate_passed"] = not row["validation_failures"]
     details = {
         "row": row,
         "job": job,
@@ -418,11 +439,21 @@ def main():
         try:
             result = run_worker(job)
         except Exception as error:
+            message = f"{type(error).__name__}: {error}"
             result = {
-                "row": {"method": job["method"], "gate_passed": False},
-                "error": f"{type(error).__name__}: {error}",
+                "row": {
+                    **{
+                        k: job[k]
+                        for k in ("dataset", "seed", "repeat", "method", "graph_method")
+                    },
+                    "gate_passed": False,
+                    "error": message,
+                    "validation_failures": [message],
+                },
+                "error": message,
                 "job": job,
             }
+        result["row"]["result_file"] = Path(job["result_path"]).name
         Path(job["result_path"]).write_text(
             json.dumps(result, indent=2, allow_nan=False) + "\n"
         )
@@ -512,6 +543,12 @@ def main():
             check=True,
         )
         rows.append(json.loads(Path(job["result_path"]).read_text())["row"])
+        if not rows[-1]["gate_passed"]:
+            print(
+                f"  FAILED {rows[-1]['result_file']}: "
+                + "; ".join(rows[-1]["validation_failures"]),
+                flush=True,
+            )
         with (output / "summary.csv").open("w", newline="") as handle:
             writer = csv.DictWriter(
                 handle, fieldnames=sorted(set().union(*(r.keys() for r in rows)))
@@ -519,8 +556,28 @@ def main():
             writer.writeheader()
             writer.writerows(rows)
     passed = all(row["gate_passed"] for row in rows)
+    failed_runs = [
+        {
+            key: row[key]
+            for key in (
+                "result_file",
+                "dataset",
+                "seed",
+                "repeat",
+                "method",
+                "graph_method",
+                "validation_failures",
+            )
+        }
+        for row in rows
+        if not row["gate_passed"]
+    ]
     (output / "validation.json").write_text(
-        json.dumps({"gate_passed": passed, "runs": len(rows)}, indent=2) + "\n"
+        json.dumps(
+            {"gate_passed": passed, "runs": len(rows), "failed_runs": failed_runs},
+            indent=2,
+        )
+        + "\n"
     )
     if not passed:
         raise SystemExit(

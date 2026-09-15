@@ -6,6 +6,13 @@ All notable changes to `fast-ballmapper` are documented here.
 
 ### Fixed
 
+- Enable float64 candidate filtering in both paper-experiment FAISS Flat
+  configurations. A reported Gaussian pilot had one extra membership and two
+  extra edges with unverified float32 range predicates. Verification time is
+  included, and exact-output validation remains strict.
+- Report per-run validation failures, filenames and worker exception details
+  instead of only an aggregate experiment failure message.
+
 - Preserve caller inputs and original-coordinate verification snapshots when
   constructing cosine FAISS indexes.
 - Mark capped Flat kNN searches approximate and record actual GPU storage dtype.
