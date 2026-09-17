@@ -1,102 +1,37 @@
 # fast-ballmapper
 
-`fast-ballmapper` constructs Ball Mapper graph summaries of metric data, with a particular focus on auditable range query backends and numerical consistency at the radius boundary.
-
-Ball Mapper repeatedly asks one computational question: for a landmark and a radius, which observations lie in the corresponding closed metric ball? The package separates that mathematical query from the data structure used to answer it. In the mathematical language used by the companion manuscript, an **oracle** is an idealized procedure that returns the answer to a specified query. A backend is a concrete implementation of that procedure. The float64 brute force backend therefore serves as a transparent reference oracle against which accelerated backends can be checked.
-
-Version `0.2.0` introduces a common range query backend interface, independent exact CPU implementations, approximation audits, witness counts, and a unified closed ball convention.
-
-The development branch also includes verified greedy selection, blocked sparse
-witness construction, and a reproducible CPU experiment matrix. See the
-[experiment guide](experiments/README.md) for installation, validation gates,
-comparison commands, and the measurements needed for the companion paper.
-
-## Main Features
-
-The package provides:
-
-- exact Ball Mapper construction with float64 brute force, scikit-learn BallTree, and SciPy `cKDTree`;
-- exhaustive and approximate FAISS backends;
-- optional hnswlib and NVIDIA cuVS adapters;
-- deterministic greedy landmark construction and farthest point sampling;
-- fixed landmark cover construction for backend comparisons;
-- graph construction with distinct witness counts on edges;
-- boundary margin diagnostics;
-- membership, witness, edge, and color audits for approximate covers; and
-- optional Matplotlib and Plotly visualization.
-
-## Closed Ball Boundary Convention
-
-Ball Mapper uses closed metric balls:
-
-```text
-B(l, eps) = {x : d(x, l) <= eps}.
-```
-
-Different libraries expose different numerical comparison rules. Some radius APIs are inclusive, while others use a strict threshold. `fast-ballmapper` implements one common policy so that all supported exact backends represent the same mathematical closed ball.
-
-When a backend uses a strict comparison, the implementation replaces `eps` by the next representable floating point value above it through `np.nextafter`. It then applies the strict comparison at that outward rounded threshold. Therefore, a value represented exactly as `eps` is included, while the next representable value above `eps` is excluded.
-
-This rule is part of the numerical semantics of the package. It is not a user selected tolerance, and no problem dependent `atol` or `rtol` is introduced.
-
-The inclusive-comparison equivalence assumes the same dtype and the same
-reported-distance computation. `nextafter` does not bound distance arithmetic
-error or guarantee agreement between float32 FAISS and float64 reference
-distances. Audit output equality at the chosen radius, including when changing
-batch size. The cosine option uses `1 - cosine_similarity`, which is a
-dissimilarity and does not satisfy the triangle inequality in general.
+`fast-ballmapper` is a small Python package for constructing Ball Mapper covers and graphs with interchangeable range-query backends. The package separates the mathematical Ball Mapper construction from the data structure used to answer radius queries, making exact implementations easy to compare and approximate implementations easy to audit.
 
 ## Installation
 
-Install the core package with:
+Core package:
 
 ```bash
 pip install fast-ballmapper
 ```
 
-Optional extras include:
+Common optional dependencies:
 
 ```bash
-pip install "fast-ballmapper[plot]"
-pip install "fast-ballmapper[faiss]"
-pip install "fast-ballmapper[hnswlib]"
+pip install "fast-ballmapper[faiss]"   # FAISS backends
+pip install "fast-ballmapper[plot]"    # Matplotlib and Plotly
+pip install "fast-ballmapper[all]"     # common CPU extras
 ```
 
-For NVIDIA cuVS, choose the extra that matches the installed CUDA major version:
+For development or manuscript reproduction:
 
 ```bash
-pip install "fast-ballmapper[cuvs-cu12]"
-# or
-pip install "fast-ballmapper[cuvs-cu13]"
-```
-
-The common optional CPU backends and plotting dependencies can be installed with:
-
-```bash
-pip install "fast-ballmapper[all]"
-```
-
-CUDA specific cuVS extras are intentionally excluded from `all` because the correct package depends on the target system.
-
-For development:
-
-```bash
+git clone https://github.com/jhnrckmnznrs/fast-ballmapper.git
+cd fast-ballmapper
+python -m venv .venv
+source .venv/bin/activate
 python -m pip install -e ".[dev,plot,faiss]"
-pytest
 ```
 
-The distribution name contains a hyphen, whereas the Python import package uses an underscore:
-
-```text
-pip install fast-ballmapper
-import fast_ballmapper
-```
-
-## Minimal Example
+## Minimal example
 
 ```python
 import numpy as np
-
 from fast_ballmapper import build_mapper, compute_landmarks
 
 rng = np.random.default_rng(42)
@@ -106,366 +41,195 @@ landmarks, cover = compute_landmarks(
     x,
     eps=0.1,
     method="ball_tree",
-    metric="euclidean",
-    leaf_size=40,
 )
-
 graph = build_mapper(cover)
 
-print(f"Landmarks: {len(landmarks)}")
-print(f"Edges: {graph.number_of_edges()}")
+print(len(landmarks), graph.number_of_edges())
 ```
 
-## Range Query Backend Architecture
+`compute_landmarks` returns the ordered landmark indices and their cover sets. `build_mapper` creates the Ball Mapper graph; every graph edge stores its witness count.
 
-The public `RangeQueryBackend` protocol makes the search operation explicit. Existing code can continue to use `method=...`, while new code can construct a backend once and reuse it:
+## Core API
+
+| Function or object | Purpose |
+|---|---|
+| `compute_landmarks` | Greedy Ball Mapper landmark selection and cover construction |
+| `build_cover` | Build balls around an existing landmark set |
+| `build_mapper` | Construct the overlap graph from a cover |
+| `compare_covers` | Audit membership, witness, edge, and optional color differences |
+| `compute_boundary_diagnostics` | Measure distances to the radius boundary |
+| `make_backend` | Construct a range-query backend explicitly |
+| `FaissConfig` | Configure FAISS Flat, IVF, HNSW, CPU, or GPU execution |
+
+The public API is exported directly from `fast_ballmapper`; users normally do not need to import internal modules.
+
+## Range-query backends
+
+| Backend | Role |
+|---|---|
+| `brute_force` | transparent float64 reference |
+| `ball_tree` | exact scikit-learn BallTree queries |
+| `ckdtree` | independent exact SciPy cKDTree queries |
+| FAISS Flat | exhaustive search over stored float32 vectors |
+| FAISS IVF / HNSW | approximate candidate search |
+| hnswlib / cuVS | optional external backends |
+
+A fitted backend may also be reused directly:
 
 ```python
-from fast_ballmapper import BruteForceBackend, build_cover, compute_landmarks
+from fast_ballmapper import BruteForceBackend, build_cover
 
-backend = BruteForceBackend(x, metric="euclidean")
-landmarks, cover = compute_landmarks(x, eps=0.25, backend=backend)
-fixed_cover = build_cover(x, landmarks, eps=0.25, backend=backend)
-
-print(backend.metadata)
+backend = BruteForceBackend(x)
+cover = build_cover(x, landmarks, eps=0.1, backend=backend)
 ```
 
-Each backend reports metadata such as its name, whether it is intended to be exact, its metric, numerical dtype, execution device, batch query support, and whether it can provide exhaustive distance vectors. Farthest point sampling requires exhaustive distance vectors, so approximate candidate only backends cannot silently change its semantics.
+### Closed-ball convention
 
-The included backends are:
-
-| Backend | Exactness | Device | Main Role |
-|---|---:|---|---|
-| `BruteForceBackend` | exact | CPU | transparent float64 reference |
-| `BallTreeBackend` | exact | CPU | exact tree with flexible metrics |
-| `CKDTreeBackend` | exact | CPU | independent exact Euclidean tree |
-| `FaissFlatBackend` | exhaustive over stored vectors | CPU/GPU | optimized float32 baseline |
-| `FaissIVFBackend` | approximate | CPU/GPU | inverted file search |
-| `FaissHNSWBackend` | approximate | CPU/GPU | FAISS HNSW search |
-| `HnswlibBackend` | approximate | CPU | optional HNSW search |
-| `CuVSBackend` | configuration dependent | GPU | optional brute force or CAGRA search |
-
-FAISS Flat is exhaustive relative to its stored float32 representation. Consequently, points extremely close to the radius boundary can still differ from a float64 reference because of representation rounding.
-
-A backend can also be created through the factory:
-
-```python
-from fast_ballmapper import make_backend
-
-backend = make_backend(x, "ckdtree", metric="euclidean")
-```
-
-External users can implement the same protocol and pass a fitted backend through `backend=` without changing landmark selection, graph construction, coloring, or auditing code.
-
-## Fixed Landmark Cover Construction
-
-`compute_landmarks` selects landmarks and constructs their cover. `build_cover` constructs cover sets around a landmark set that has already been chosen.
-
-The second operation is useful when different search backends must be compared on exactly the same landmarks:
-
-```python
-import numpy as np
-
-from fast_ballmapper import FaissConfig, build_cover, compute_landmarks
-
-rng = np.random.default_rng(42)
-x = rng.random((1000, 8)).astype("float32")
-
-landmarks, exact_cover = compute_landmarks(
-    x,
-    eps=0.25,
-    method="faiss",
-    metric="euclidean",
-    faiss_config=FaissConfig(factory="Flat"),
-)
-
-approximate_cover = build_cover(
-    x,
-    landmarks,
-    eps=0.25,
-    method="faiss",
-    metric="euclidean",
-    faiss_config=FaissConfig(
-        factory="IVF64,Flat",
-        search_params={"nprobe": 8},
-    ),
-)
-```
-
-Because the landmark set is fixed, differences between the two covers arise from range query behavior rather than from different landmark choices.
-
-## Brute Force Reference Oracle
-
-For correctness audits, `method="brute_force"` performs exhaustive float64 Euclidean or cosine queries. It is intentionally simple rather than optimized.
-
-```python
-reference_cover = build_cover(
-    x,
-    landmarks,
-    eps=0.25,
-    method="brute_force",
-    metric="euclidean",
-)
-
-balltree_cover = build_cover(
-    x,
-    landmarks,
-    eps=0.25,
-    method="ball_tree",
-    metric="euclidean",
-)
-```
-
-The same backend can be used with `compute_landmarks` and `compute_landmarks_fps`.
-
-## Boundary Margin Diagnostics
-
-The sensitivity of a fixed radius query is concentrated near the boundary `d(x, l) = eps`. The diagnostic API computes, for each landmark, the minimum absolute margin to that boundary, the nearest inside and outside margins, and optional counts inside specified boundary bands.
-
-```python
-from fast_ballmapper import compute_boundary_diagnostics
-
-diagnostics = compute_boundary_diagnostics(
-    x,
-    landmarks,
-    eps=0.25,
-    metric="euclidean",
-    deltas=[1e-6, 1e-4, 1e-2],
-)
-
-print(diagnostics.min_abs_margin)
-print(diagnostics.outside_margin)
-print(diagnostics.band_counts[1e-4])
-```
-
-These diagnostics use the same float64 reference distance as the brute force backend.
-
-## Approximation Audit Reports
-
-`compare_covers` combines membership, graph, witness, boundary, and optional color diagnostics into one fixed landmark audit report.
-
-```python
-from fast_ballmapper import compare_covers
-
-report = compare_covers(
-    reference_cover,
-    approximate_cover,
-    x=x,
-    landmarks=landmarks,
-    eps=0.25,
-    metric="euclidean",
-    deltas=[1e-6, 1e-4, 1e-2],
-    values=response,
-)
-
-print(report.membership_precision, report.membership_recall)
-print(report.edge_precision, report.edge_recall)
-print(report.missing_edges)
-```
-
-For each ball, precision, recall, and Jaccard scores are available under `report.balls`. Edge witness changes distinguish retained, lost, and newly introduced witnesses. Therefore, replacement by a false positive observation cannot be mistaken for genuine witness survival.
-
-When scalar `values` are supplied, the audit also computes mean node colors and evaluates the finite set bound
+Ball Mapper uses
 
 ```text
-abs(color_reference - color_approximate)
-    <= local_oscillation * (1 - min(precision, recall)).
+B(l, eps) = {x : d(x, l) <= eps}.
 ```
 
-Boundary diagnostics are attached only when `x`, `landmarks`, and `eps` are provided together. The two covers must use the same fixed landmarks in the same order.
+The package applies a common boundary policy across supported backends. The brute-force reference uses float64 distances. FAISS stores vectors in float32, so points extremely close to the boundary can still differ because of numerical representation; experiment outputs are therefore audited against the float64 reference rather than assumed exact.
 
-## Farthest Point Sampling
+## Approximation audit
 
-```python
-from fast_ballmapper import compute_landmarks_fps
-
-landmarks, cover = compute_landmarks_fps(
-    x,
-    eps=0.1,
-    start_index=None,
-    method="ball_tree",
-    metric="euclidean",
-    leaf_size=40,
-    metric_kwargs=None,
-)
-```
-
-When `start_index` is `None`, the lexicographically smallest point is selected first. Therefore, the result is deterministic once the distance and tie rules are fixed.
-
-Approximate candidate only backends are not used for farthest point sampling because the algorithm requires the distance from each selected landmark to every observation.
-
-## FAISS Backend
-
-FAISS supports Euclidean and cosine distances in this package. For cosine distance, zero vectors are rejected because cosine distance is undefined for them.
+Fixed landmarks isolate range-query error from landmark-selection error:
 
 ```python
-from fast_ballmapper import FaissConfig, compute_landmarks
+from fast_ballmapper import FaissConfig, build_cover, compare_covers
 
-config = FaissConfig(factory="Flat")
-
-landmarks, cover = compute_landmarks(
+reference = build_cover(x, landmarks, eps=0.1, method="brute_force")
+approximate = build_cover(
     x,
+    landmarks,
     eps=0.1,
     method="faiss",
-    metric="euclidean",
-    faiss_config=config,
-)
-```
-
-A Flat index examines every stored vector. Therefore, it is exhaustive over its stored numerical representation.
-
-### Configurable FAISS Indexes
-
-Examples include:
-
-```python
-FaissConfig(factory="Flat")
-FaissConfig(factory="IVF256,Flat", search_params={"nprobe": 16})
-FaissConfig(factory="HNSW32", search_params={"efSearch": 64})
-FaissConfig(factory="SQ8")
-FaissConfig(factory="IVF256,SQ8", search_params={"nprobe": 16})
-FaissConfig(factory="IVF256,PQ16x4", query_mode="knn", candidate_k=1024)
-```
-
-Indexes that do not search exhaustively can omit true ball members. Compressed indexes can additionally introduce returned candidates whose exact distance lies outside the requested ball.
-
-### Candidate Search and Exact Verification
-
-Some configurations use a `k` nearest neighbor candidate search and then filter candidates by radius:
-
-```python
-config = FaissConfig(
-    factory="IVF256,Flat",
-    search_params={"nprobe": 16},
-    query_mode="knn",
-    candidate_k=1024,
-    exact_verify=True,
-)
-```
-
-Exact verification removes false positive memberships among the examined candidates. However, it cannot recover true ball members that were never present in the candidate set.
-
-### Optional GPU Execution
-
-GPU execution can be requested through `FaissConfig`:
-
-```python
-config = FaissConfig(
-    factory="Flat",
-    device="gpu",
-    gpu_device=0,
-    gpu_fallback_to_cpu=True,
-)
-```
-
-Use `device="auto"` when GPU execution should be used only if the current FAISS installation and hardware support it. The default remains `device="cpu"` for reproducibility.
-
-## Graph Construction and Coloring
-
-```python
-from fast_ballmapper import (
-    build_mapper,
-    color_by_density,
-    color_by_function,
-    color_by_size,
+    faiss_config=FaissConfig(
+        factory="HNSW32",
+        query_mode="knn",
+        candidate_k=4096,
+        search_params={"efSearch": 64},
+        exact_verify=True,
+    ),
 )
 
-graph = build_mapper(cover)
-
-for left, right, data in graph.edges(data=True):
-    print(left, right, data["witness_count"])
-
-sizes = color_by_size(cover)
-density = color_by_density(cover)
-mean_first_coordinate = color_by_function(x[:, 0], cover)
+report = compare_covers(reference, approximate)
+print(report.membership_recall, report.edge_recall)
 ```
 
-Every edge stores the number of distinct observations witnessing the corresponding overlap.
+`exact_verify=True` filters returned candidates by the original-coordinate radius test. It removes false-positive candidates but cannot recover true members omitted by an approximate search.
 
-## Visualization
+## Repository layout
 
-Matplotlib and Plotly support live in optional submodules so that importing the core package does not import either plotting library.
-
-### Matplotlib
-
-```python
-import matplotlib.pyplot as plt
-
-from fast_ballmapper.plotting.matplotlib import add_colorbar, draw_ball_mapper
-
-fig, ax = plt.subplots(figsize=(8, 6))
-_, nodes = draw_ball_mapper(
-    graph,
-    colors=sizes,
-    sizes=sizes,
-    layout="spring",
-    node_scale=500,
-    ax=ax,
-)
-
-add_colorbar(nodes, ax, label="Ball size")
-plt.show()
+```text
+fast-ballmapper/
+├── src/fast_ballmapper/       package implementation
+├── tests/                     unit and regression tests
+├── examples/                  two small executable examples
+├── experiments/               manuscript validation and benchmark runner
+├── README.md                  user, developer, and reproducibility guide
+├── pyproject.toml             package and tool configuration
+├── CITATION.cff               software citation metadata
+└── LICENSE                    MIT license
 ```
 
-### Plotly
+Implementation files are separated by responsibility: landmark/cover construction, graph construction, diagnostics/audits, optional plotting, and backend adapters. This is intentionally more reviewable than a single large implementation file.
 
-```python
-from fast_ballmapper.plotting.plotly import draw_ball_mapper_plotly
+## Validation and tests
 
-figure = draw_ball_mapper_plotly(
-    graph,
-    cover,
-    colorings={"Ball size": sizes, "Density": density},
-    sizes=sizes,
-    show=True,
-)
-```
-
-Use `export_html="ball_mapper.html"` to create a standalone interactive HTML file.
-
-## Reproducibility Checks
-
-Two repository scripts provide compact reproducibility checks:
+For ordinary development:
 
 ```bash
-python experiments/run_exactness_gate.py
-python experiments/run_fixed_landmarks.py --n 5000 --d 32 --seed 0
+python -m ruff check .
+pytest
 ```
 
-`run_exactness_gate.py` compares the float64 brute force reference, BallTree, and SciPy `cKDTree` under the common closed ball convention. `run_fixed_landmarks.py` provides a compact FAISS benchmark with fixed landmarks.
+For the numerical exactness gate used by the manuscript:
 
-Generated CSV, audit, and figure outputs are ignored by Git and are not included in source distributions. The larger manuscript experiment matrix is summarized in `EXPERIMENT_STATUS.md`.
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+python experiments/run_exactness_gate.py
+```
 
-## Public API
+The gate compares the float64 brute-force oracle with BallTree and cKDTree on ordered landmarks, memberships, and graph output.
 
-Core functions, backend abstractions, and configuration objects are exported directly from `fast_ballmapper`:
+## Reproducing the manuscript experiment matrix
 
-- `RangeQueryBackend`, `BackendMetadata`, `make_backend`
-- `BruteForceBackend`, `BallTreeBackend`, `CKDTreeBackend`
-- `FaissFlatBackend`, `FaissIVFBackend`, `FaissHNSWBackend`
-- `HnswlibBackend`, `CuVSBackend`
-- `ApproximationAudit`
-- `BoundaryDiagnostics`
-- `FaissConfig`
-- `compare_covers`
-- `compute_boundary_diagnostics`
-- `compute_landmarks`
-- `compute_landmarks_fps`
-- `build_cover`
-- `build_mapper`
-- `compute_edge_overlaps`
-- `color_by_function`
-- `color_by_mode`
-- `color_by_entropy`
-- `color_by_size`
-- `color_by_density`
+First run the smoke matrix:
 
-## Development and Citation
+```bash
+python experiments/run_paper_experiments.py \
+  --smoke \
+  --output experiments/results/smoke
+```
 
-Backend extension guidance is available in [`docs/backend_architecture.md`](docs/backend_architecture.md), and contributor setup is documented in [`CONTRIBUTING.md`](CONTRIBUTING.md). The repository also contains [`CITATION.cff`](CITATION.cff) so GitHub can expose software citation metadata.
+The main `n=20000`, `d=50` experiment is:
 
-For research use, please cite the Ball Mapper methodology relevant to the analysis and cite the software release. The companion range query manuscript can be added after it receives a persistent publication identifier.
+```bash
+python experiments/run_paper_experiments.py \
+  --n 20000 --d 50 \
+  --seeds 0 1 2 --repeats 3 \
+  --target-ball-size 50 \
+  --candidate-k 4096 \
+  --threads 1 \
+  --output experiments/results/paper-n20000-d50
+```
+
+Search-effort sweeps use separate output directories. For IVF:
+
+```bash
+for nprobe in 1 2 4 8 16 32 64; do
+  python experiments/run_paper_experiments.py \
+    --n 20000 --d 50 --seeds 0 1 2 --repeats 3 \
+    --target-ball-size 50 --threads 1 \
+    --methods ivf --nprobe "$nprobe" \
+    --output "experiments/results/ivf-nprobe${nprobe}"
+done
+```
+
+For HNSW:
+
+```bash
+for ef in 32 64 128 256; do
+  python experiments/run_paper_experiments.py \
+    --n 20000 --d 50 --seeds 0 1 2 --repeats 3 \
+    --target-ball-size 50 --candidate-k 4096 --threads 1 \
+    --methods hnsw verified_hnsw_partial verified_hnsw_complete \
+    --ef-search "$ef" \
+    --output "experiments/results/hnsw-ef${ef}"
+done
+```
+
+Run manuscript timing experiments sequentially rather than concurrently. Each worker already runs in a fresh process with the requested thread limits; concurrent benchmark invocations would introduce CPU, cache, and memory contention.
+
+Each output directory contains three compact review files:
+
+- `manifest.json`: source, environment, arguments, hashes, and dataset metadata;
+- `summary.csv`: one row per measured run;
+- `validation.json`: overall gate status and failed-run identifiers.
+
+Large per-run worker artifacts and reference arrays are intentionally ignored by Git.
+
+## Reviewer checklist
+
+A compact independent review can be done with:
+
+```bash
+python -m pip install -e ".[dev,faiss]"
+python -m ruff check .
+pytest
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python experiments/run_exactness_gate.py
+python experiments/run_paper_experiments.py --smoke --output /tmp/fast-ballmapper-smoke
+```
+
+The experiment runner records source hashes and backend configuration so reported measurements can be tied to the code that produced them.
+
+## Citation
+
+Software citation metadata are provided in `CITATION.cff`. For research use, cite both the Ball Mapper methodology relevant to the analysis and the software release used for computation.
 
 ## License
 
-MIT
+MIT.
