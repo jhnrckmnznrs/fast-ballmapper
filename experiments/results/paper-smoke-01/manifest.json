@@ -1,0 +1,108 @@
+{
+  "git_commit": "4bb9575e35850689ed24053a90786dab46a2527a",
+  "git_dirty": false,
+  "source_sha256": "0bdd2feb44bef7857b54a787dc9c6acd9cb53d19f4304b059a923cc6aee3b0ac",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "processor": "x86_64",
+  "logical_cpu_count": 12,
+  "dependencies": {
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "networkx": "3.6.1",
+    "faiss-cpu": "1.15.0"
+  },
+  "reference_predicate": "direct float64 Euclidean norm <= epsilon",
+  "scope": "CPU Euclidean fixed observation order; newly specified generators",
+  "arguments": {
+    "output": "experiments/results/paper-smoke-01",
+    "n": 200,
+    "d": 4,
+    "seeds": [
+      0
+    ],
+    "datasets": [
+      "gaussian",
+      "mixture",
+      "curve"
+    ],
+    "methods": [
+      "brute_force",
+      "ball_tree",
+      "ckdtree",
+      "ckdtree_inflated",
+      "flat_scalar",
+      "flat_batch",
+      "ivf",
+      "hnsw",
+      "verified_none_partial",
+      "verified_none_complete",
+      "verified_hnsw_partial",
+      "verified_hnsw_complete"
+    ],
+    "graph_methods": [
+      "inverted",
+      "sparse"
+    ],
+    "repeats": 1,
+    "threads": 1,
+    "target_ball_size": 12,
+    "calibration_queries": 128,
+    "batch_size": 64,
+    "block_size": 4096,
+    "row_block_size": 7,
+    "candidate_k": 8,
+    "candidate_eps": 0.1,
+    "nlist": 64,
+    "nprobe": 1,
+    "ef_search": 16,
+    "smoke": true,
+    "worker": null
+  },
+  "cases": [
+    {
+      "dataset": "gaussian",
+      "seed": 0,
+      "reference_file": "gaussian_seed0_reference.npz",
+      "n": 200,
+      "d": 4,
+      "epsilon": 1.2850701506630724,
+      "data_sha256": "4cdf1b4cfdc1bfea73f3b4d3c2224fdabd464dc8395978a6d7c1e54d36d7052a",
+      "landmarks_sha256": "4e66a596b869edd72f0086e5f1b9b248333a3c373e54ff13848c76baad232759",
+      "max_reference_ball_size": 34,
+      "m": 53,
+      "S": 366,
+      "T": 238
+    },
+    {
+      "dataset": "mixture",
+      "seed": 0,
+      "reference_file": "mixture_seed0_reference.npz",
+      "n": 200,
+      "d": 4,
+      "epsilon": 0.6487928558334013,
+      "data_sha256": "fed9e0b74d2abe386879b1fb7ad5c1a23bea1d523ee70a96aec453b22ce965dc",
+      "landmarks_sha256": "4aaae22f3a9f14c193a655b1dcb56d4d04e8cd59566ef77c47133d1d589730b8",
+      "max_reference_ball_size": 21,
+      "m": 51,
+      "S": 397,
+      "T": 316
+    },
+    {
+      "dataset": "curve",
+      "seed": 0,
+      "reference_file": "curve_seed0_reference.npz",
+      "n": 200,
+      "d": 4,
+      "epsilon": 0.3975728186158405,
+      "data_sha256": "90fc0aa991f826785977065b7e6b9495e7325b1042dbcdc233f01a44d6066197",
+      "landmarks_sha256": "2c2ba949cf519b8ae6d6362a261c0d94c70cf3fc1909c737ad60123a11f104c7",
+      "max_reference_ball_size": 19,
+      "m": 24,
+      "S": 272,
+      "T": 72
+    }
+  ]
+}
