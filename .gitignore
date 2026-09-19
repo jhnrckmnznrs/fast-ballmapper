@@ -12,7 +12,7 @@ dist/
 .venv/
 venv/
 
-# Test / lint / coverage caches
+# Test, lint, and coverage caches
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -20,18 +20,23 @@ venv/
 coverage.xml
 htmlcov/
 
-# Editors / OS
+# Editors and operating systems
 .vscode/
 .idea/
 .DS_Store
+*.swp
+*.swo
+*~
 
-# Generated experiment outputs
-experiments/results/*
-!experiments/results/raw/
-!experiments/results/figures/
-experiments/results/raw/*
-!experiments/results/raw/.gitkeep
-experiments/results/figures/*
-!experiments/results/figures/.gitkeep
+# Large experiment worker artifacts.
+# Compact manifest.json, summary.csv, and validation.json files may be tracked.
+experiments/results/**/job_*.json
+experiments/results/**/run_*.json
+experiments/results/**/run_*.npz
+experiments/results/**/*_reference.npz
+experiments/results/raw/
+experiments/results/figures/
+
+# Standalone approximation-audit outputs
 *.audit.json
 *.audit.full.json

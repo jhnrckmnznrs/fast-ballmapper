@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fast-ballmapper"
 version = "0.2.0"
-description = "Auditable Ball Mapper construction with exact and approximate range-query backends"
+description = "Ball Mapper construction with exact and approximate range-query backends"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -19,7 +19,6 @@ keywords = [
   "topological-data-analysis",
   "point-cloud",
   "range-query",
-  "networkx",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -42,13 +41,10 @@ dependencies = [
 Homepage = "https://github.com/jhnrckmnznrs/fast-ballmapper"
 Repository = "https://github.com/jhnrckmnznrs/fast-ballmapper"
 Issues = "https://github.com/jhnrckmnznrs/fast-ballmapper/issues"
-Changelog = "https://github.com/jhnrckmnznrs/fast-ballmapper/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 faiss = ["faiss-cpu>=1.7.4"]
-faiss-gpu = [
-    "faiss-gpu",
-]
+faiss-gpu = ["faiss-gpu"]
 hnswlib = ["hnswlib>=0.8"]
 cuvs-cu12 = ["cuvs-cu12; python_version >= '3.11'", "cupy-cuda12x; python_version >= '3.11'"]
 cuvs-cu13 = ["cuvs-cu13; python_version >= '3.11'", "cupy-cuda13x; python_version >= '3.11'"]

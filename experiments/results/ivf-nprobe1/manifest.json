@@ -1,0 +1,183 @@
+{
+  "git_commit": "58565b8cefdb284429f51dd09dd83d5b819e2f1d",
+  "git_dirty": true,
+  "source_sha256": "426ca2b4c47171da88c7a277e2d6c3c6b83c5e51958ac88ccd004f12d7ca7b56",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "processor": "x86_64",
+  "logical_cpu_count": 12,
+  "dependencies": {
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "networkx": "3.6.1",
+    "faiss-cpu": "1.15.0"
+  },
+  "reference_predicate": "direct float64 Euclidean norm <= epsilon",
+  "scope": "CPU Euclidean fixed observation order; newly specified generators",
+  "arguments": {
+    "output": "experiments/results/ivf-nprobe1",
+    "n": 20000,
+    "d": 50,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "datasets": [
+      "gaussian",
+      "mixture",
+      "curve"
+    ],
+    "methods": [
+      "ivf"
+    ],
+    "graph_methods": [
+      "inverted",
+      "sparse"
+    ],
+    "repeats": 3,
+    "threads": 1,
+    "target_ball_size": 50,
+    "calibration_queries": 128,
+    "batch_size": 64,
+    "block_size": 4096,
+    "row_block_size": 256,
+    "candidate_k": 4096,
+    "candidate_eps": 0.1,
+    "nlist": 64,
+    "nprobe": 1,
+    "ef_search": 128,
+    "smoke": false,
+    "worker": null
+  },
+  "cases": [
+    {
+      "dataset": "gaussian",
+      "seed": 0,
+      "reference_file": "gaussian_seed0_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 7.506770204200981,
+      "data_sha256": "da69446c02edb9a4bf092168d07f6460046013571c6c980e17e59014c0606f42",
+      "landmarks_sha256": "fde199adbffe13c5eb05927610c165fc739c13d199c511512e70447a57886aaf",
+      "max_reference_ball_size": 1579,
+      "m": 6747,
+      "S": 114922,
+      "T": 1219045
+    },
+    {
+      "dataset": "gaussian",
+      "seed": 1,
+      "reference_file": "gaussian_seed1_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 7.574759046478659,
+      "data_sha256": "9df987fc3457b319121d9c35c937a67fee1d8ac9d1eeea853884e1e5381595a6",
+      "landmarks_sha256": "0b454e53b50d2a83171472ec3cba72840769fe4e9c76c5cf25a4d884bdb11c52",
+      "max_reference_ball_size": 639,
+      "m": 6055,
+      "S": 128268,
+      "T": 1419251
+    },
+    {
+      "dataset": "gaussian",
+      "seed": 2,
+      "reference_file": "gaussian_seed2_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 7.490751699528582,
+      "data_sha256": "285b99c61a5715a830402bd30612701046c7d7539de546b425719d4bfc06ec29",
+      "landmarks_sha256": "8644f5bcee1324683ee8949256e67db1c234d802eb03a83297e39dd0daadbef9",
+      "max_reference_ball_size": 509,
+      "m": 6868,
+      "S": 114518,
+      "T": 1150593
+    },
+    {
+      "dataset": "mixture",
+      "seed": 0,
+      "reference_file": "mixture_seed0_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 2.7590165760743983,
+      "data_sha256": "a2a5ca31d321f466f92db143e1bfd6c4900c461292a2c9b260d17546ce047d14",
+      "landmarks_sha256": "ee5b288de14e045c7a93c4a90ecbe276a2e34f68987f521133bbecc0aff54b96",
+      "max_reference_ball_size": 401,
+      "m": 6264,
+      "S": 105497,
+      "T": 836791
+    },
+    {
+      "dataset": "mixture",
+      "seed": 1,
+      "reference_file": "mixture_seed1_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 2.7667459412279536,
+      "data_sha256": "11144b6ba25d5a3c1f278a849e986543130e227828c806fa2722f82595c51ec6",
+      "landmarks_sha256": "1eea0097744254166df32cda9e98abe9b01d19370748a33f22633e276f4c2b5d",
+      "max_reference_ball_size": 515,
+      "m": 6090,
+      "S": 112872,
+      "T": 934006
+    },
+    {
+      "dataset": "mixture",
+      "seed": 2,
+      "reference_file": "mixture_seed2_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 2.7771619031635915,
+      "data_sha256": "1ce45940eb9acd48ea8a99f15f8f8fe26318038edab90ba7490dac5da8056815",
+      "landmarks_sha256": "f577180e58af6e81c05a18a8e21904b724fc78d0ae28d4a428a69b617edce3a6",
+      "max_reference_ball_size": 558,
+      "m": 5906,
+      "S": 114134,
+      "T": 934543
+    },
+    {
+      "dataset": "curve",
+      "seed": 0,
+      "reference_file": "curve_seed0_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 0.6459767293169086,
+      "data_sha256": "565f1707291078be5b18066027c7a5236b88005819eb055b5579c247f519682b",
+      "landmarks_sha256": "7bb26c23192a997c5440bc1c1460c2083c7eb25e525ab8bfdc1176f25ba32673",
+      "max_reference_ball_size": 73,
+      "m": 605,
+      "S": 29557,
+      "T": 9561
+    },
+    {
+      "dataset": "curve",
+      "seed": 1,
+      "reference_file": "curve_seed1_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 0.6414776972700413,
+      "data_sha256": "33d3dae43b8dc197f9bffa1239ece51c1b4c16bd0259901b905db341db2cbb25",
+      "landmarks_sha256": "75bfb108730b6594333366a495c88363ad74a37b051e5c22508cb3c360a55fe4",
+      "max_reference_ball_size": 69,
+      "m": 614,
+      "S": 29790,
+      "T": 9798
+    },
+    {
+      "dataset": "curve",
+      "seed": 2,
+      "reference_file": "curve_seed2_reference.npz",
+      "n": 20000,
+      "d": 50,
+      "epsilon": 0.6494692877791279,
+      "data_sha256": "a37fed2731025f927ab34eb4a6fa7d30544dbd06f46f0ee3514f62906db9b54d",
+      "landmarks_sha256": "e7d29c4c1cd6b8bf8abc453d6841f5dcad02b3a0a40c4c7e920f94726d5e8783",
+      "max_reference_ball_size": 71,
+      "m": 607,
+      "S": 29797,
+      "T": 9800
+    }
+  ]
+}
