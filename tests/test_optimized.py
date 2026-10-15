@@ -129,3 +129,30 @@ def test_multiscale_from_complete_cover():
     np.testing.assert_array_equal(a.component_counts,b.component_counts)
     with pytest.raises(ValueError):
         fixed_landmark_h0_from_cover(x,lm,radii,[np.array([0])]*len(lm))
+
+@pytest.mark.parametrize("d", [1, 2, 4, 16])
+def test_localization_at_nextafter_boundaries(d):
+    rng = np.random.default_rng(319 + d)
+    for trial in range(25):
+        x = rng.normal(size=(24, d))
+        i, j = rng.choice(len(x), size=2, replace=False)
+        threshold = np.linalg.norm(x[i] - x[j])
+        eps = float(
+            np.nextafter(
+                threshold, np.inf if trial % 2 else -np.inf
+            )
+        )
+        landmarks, owners = select_landmarks_uncovered(x, eps)
+        cover = build_cover_localized(
+            x, landmarks, eps, owners, strategy="localized"
+        )
+        reference = [
+            np.flatnonzero(
+                np.linalg.norm(x - x[landmark], axis=1) <= eps
+            )
+            for landmark in landmarks
+        ]
+        assert all(
+            np.array_equal(a, b)
+            for a, b in zip(cover, reference, strict=True)
+        )
