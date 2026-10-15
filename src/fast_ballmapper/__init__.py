@@ -55,12 +55,41 @@ from fast_ballmapper.sparse import (
     cover_statistics,
 )
 
+from fast_ballmapper.optimized import (
+    CompletionStats,
+    ComponentFiltration,
+    ball_mapper_components,
+    build_cover_localized,
+    build_mapper_auto,
+    build_mapper_csr,
+    build_mapper_streaming,
+    compute_landmarks_uncovered,
+    compute_mapper_streaming,
+    fixed_landmark_h0,
+    fixed_landmark_h0_from_cover,
+    iter_cover_blocked,
+    select_landmarks_uncovered,
+)
+
 try:
     __version__ = version("fast-ballmapper")
 except PackageNotFoundError:  # pragma: no cover - source checkout fallback
     __version__ = "0.2.0"
 
 __all__ = [
+    "CompletionStats",
+    "ComponentFiltration",
+    "ball_mapper_components",
+    "build_cover_localized",
+    "build_mapper_auto",
+    "build_mapper_csr",
+    "build_mapper_streaming",
+    "compute_landmarks_uncovered",
+    "compute_mapper_streaming",
+    "fixed_landmark_h0",
+    "fixed_landmark_h0_from_cover",
+    "iter_cover_blocked",
+    "select_landmarks_uncovered",
     "VerifiedSelection",
     "ComponentCertificate",
     "build_cover_blocked",
