@@ -88,7 +88,7 @@ def main():
             )
             row[f"{engine}_warmup_seconds"] = time.perf_counter() - start
             got, duration = timed(
-                lambda: build_cover_localized(
+                lambda x=x, landmarks=landmarks, eps=eps, owners=owners, engine=engine: build_cover_localized(
                     x, landmarks, eps, owners,
                     strategy="localized", engine=engine
                 ), args.repeats
@@ -99,13 +99,13 @@ def main():
             )
             row[f"{engine}_seconds"] = duration
         adjacency, duration = timed(
-            lambda: build_mapper_csr(reference, n), args.repeats
+            lambda reference=reference, n=n: build_mapper_csr(reference, n), args.repeats
         )
         row["csr_seconds"] = duration
         row["dispatch"] = select_mapper_algorithm(reference, n)
         for algorithm in ("auto", "streaming"):
             result, duration = timed(
-                lambda: build_mapper_auto(
+                lambda reference=reference, n=n, algorithm=algorithm: build_mapper_auto(
                     reference, n, algorithm=algorithm
                 ), args.repeats
             )
