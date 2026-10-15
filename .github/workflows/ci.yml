@@ -33,6 +33,11 @@ jobs:
           path: ruff-report.txt
       - name: Test core package
         run: pytest --cov=fast_ballmapper --cov-report=term-missing
+      - name: Exact budget certificate benchmark smoke
+        env:
+          OPENBLAS_NUM_THREADS: 1
+          OMP_NUM_THREADS: 1
+        run: python experiments/benchmark_budget_certificates.py --quick --repeats 1 --seeds 1 --timeout 3 --output benchmarks/budget-ci-smoke.json
       - name: Exactness gate
         run: python experiments/run_exactness_gate.py --smoke
 
