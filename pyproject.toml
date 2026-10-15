@@ -44,6 +44,7 @@ Issues = "https://github.com/jhnrckmnznrs/fast-ballmapper/issues"
 
 [project.optional-dependencies]
 faiss = ["faiss-cpu>=1.7.4"]
+jit = ["numba>=0.60"]
 faiss-gpu = ["faiss-gpu"]
 hnswlib = ["hnswlib>=0.8"]
 cuvs-cu12 = ["cuvs-cu12; python_version >= '3.11'", "cupy-cuda12x; python_version >= '3.11'"]

@@ -16,6 +16,7 @@ def test_public_api_uses_snake_case():
         "fixed_landmark_h0_from_cover",
         "iter_cover_blocked",
         "select_landmarks_uncovered",
+        "select_mapper_algorithm",
         "VerifiedSelection",
         "ComponentCertificate",
         "build_cover_blocked",

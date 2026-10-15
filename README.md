@@ -285,6 +285,55 @@ python experiments/run_paper_experiments.py --smoke --output /tmp/fast-ballmappe
 
 The experiment runner records source hashes and backend configuration so reported measurements can be tied to the code that produced them.
 
+
+
+## Exact CSR-first numerical workflows
+
+For numerical algorithms or large graphs, keep the weighted adjacency in SciPy
+CSR format. The original `build_mapper(cover)` continues to return a NetworkX
+graph for compatibility; `build_mapper_auto` returns CSR by default:
+
+```python
+from fast_ballmapper import build_mapper_auto, compute_landmarks
+
+landmarks, cover = compute_landmarks(x, eps=0.1, method="ckdtree")
+adjacency = build_mapper_auto(cover, len(x))  # scipy.sparse.csr_matrix
+# adjacency[i, j] = number of observations shared by balls i and j
+```
+
+Automatic graph selection uses a conservative size/witness heuristic:
+streaming for tiny sparse covers, sparse matrix multiplication otherwise.
+Use `algorithm="csr"` or `algorithm="streaming"` to force a method, and
+`output="networkx"` only when NetworkX functionality is required. No edge
+weights or isolated vertices are lost in CSR.
+
+When completing a verified ownership-based cover, batched NumPy membership
+checks now amortize per-group overhead without changing the float64 radius
+predicate:
+
+```python
+from fast_ballmapper import select_landmarks_uncovered, build_cover_localized
+
+landmarks, owners = select_landmarks_uncovered(x, eps=0.1)
+cover = build_cover_localized(
+    x, landmarks, eps=0.1, owners=owners,
+    strategy="localized", engine="batch",
+)
+```
+
+An optional `engine="numba"` uses JIT-compiled conservative candidate
+screening followed by direct float64 NumPy verification. Install
+`pip install "fast-ballmapper[jit]"` to enable it. JIT warmup has a
+first-call cost; for most workloads batching is the recommended default.
+The compiled prefilter's floating-point guard is conservative in tested
+cases, but is not an interval-arithmetic proof for all possible inputs.
+The existing cKDTree remains the recommended general-purpose exact
+cover-construction backend.
+
+Run `python experiments/benchmark_dispatch_and_completion.py --smoke` for
+a quick correctness-checked comparison, or without `--smoke` for the
+full synthetic experiment. Warm-up and steady-state times are separate.
+
 ## Citation
 
 Software citation metadata are provided in `CITATION.cff`. For research use, cite both the Ball Mapper methodology relevant to the analysis and the software release used for computation.
