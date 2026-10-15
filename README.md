@@ -93,6 +93,65 @@ B(l, eps) = {x : d(x, l) <= eps}.
 
 The package applies a common boundary policy across supported backends. The brute-force reference uses float64 distances. FAISS stores vectors in float32, so points extremely close to the boundary can still differ because of numerical representation; experiment outputs are therefore audited against the float64 reference rather than assumed exact.
 
+## Exact computation with reduced memory
+
+The package provides optional algorithms when a complete Ball Mapper cover,
+weighted graph, or connected components are needed without always materializing
+a NetworkX graph. The original exact range-query methods remain the defaults.
+
+```python
+from fast_ballmapper import (
+    ball_mapper_components,
+    build_mapper_auto,
+    compute_landmarks_uncovered,
+)
+
+landmarks, cover = compute_landmarks_uncovered(x, eps=0.1)
+adjacency = build_mapper_auto(cover, len(x), output="csr")
+components, labels = ball_mapper_components(cover, len(x))
+```
+
+- `select_landmarks_uncovered` performs exact Euclidean greedy selection by
+  comparing a new landmark only with observations not yet covered.
+- `build_cover_localized` completes exact closed balls from an independently
+  verified covering assignment. Its `auto` strategy estimates geometric
+  candidate counts and falls back to blocked exhaustive evaluation when
+  localization is unlikely to help.
+- `build_mapper_csr` uses blocked sparse witness-count products; the returned
+  symmetric CSR matrix has a zero diagonal and integer overlap counts.
+- `build_mapper_auto` chooses witness enumeration or sparse multiplication
+  from membership statistics.
+- `build_mapper_streaming` consumes an iterable of balls once, without
+  retaining a separate cover list.
+- `ball_mapper_components` returns exact graph component labels in nearly
+  linear time in the number of cover memberships, without enumerating edges.
+- `compute_mapper_streaming` selects landmarks and computes the weighted graph
+  without holding all complete ball membership arrays in memory.
+
+### Fixed-landmark multiscale connectivity
+
+```python
+from fast_ballmapper import fixed_landmark_h0, fixed_landmark_h0_from_cover
+
+radii = [0.05, 0.1, 0.2]
+profile = fixed_landmark_h0(x, landmarks, radii)
+print(profile.component_counts, profile.merges)
+
+# Avoid a second exhaustive distance computation when a trustworthy
+# complete cover at max(radii) is already available.
+profile = fixed_landmark_h0_from_cover(x, landmarks, radii, max_radius_cover)
+```
+
+These functions compute connected components and union events for the graph
+filtration **with the same landmarks at every radius**. They are not a replacement
+for recomputing greedy landmarks independently at each radius.
+
+The new algorithms target different workloads; they are not uniformly faster
+than cKDTree, BallTree, or FAISS Flat. The streaming weighted-graph algorithms
+may still require quadratic work in the number of balls containing one point.
+All Euclidean comparisons use direct float64 norms, so numerical boundary cases
+should be audited when compared with other libraries or lower-precision indexes.
+
 ## Approximation audit
 
 Fixed landmarks isolate range-query error from landmark-selection error:
