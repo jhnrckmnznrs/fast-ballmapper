@@ -97,7 +97,11 @@ def test_streaming_pipeline():
     got_lm,got_graph=compute_mapper_streaming(x,.18,block_size=17)
     assert got_lm==lm
     assert np.array_equal(got_graph.toarray(),reference_adj(cover,len(x)))
-    assert all(np.array_equal(a,b) for a,b in zip(iter_cover_blocked(x,lm,.18,block_size=9),cover,strict=True))
+    assert all(
+        np.array_equal(a,b) for a,b in zip(
+            iter_cover_blocked(x,lm,.18,block_size=9),cover,strict=True
+        )
+    )
 
 
 def test_bad_owner_rejected():
