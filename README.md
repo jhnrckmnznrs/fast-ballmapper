@@ -334,6 +334,41 @@ Run `python experiments/benchmark_dispatch_and_completion.py --smoke` for
 a quick correctness-checked comparison, or without `--smoke` for the
 full synthetic experiment. Warm-up and steady-state times are separate.
 
+
+## Exact robustness under per-ball omission budgets
+
+For a **complete fixed-landmark cover**, the new exact-certificate API checks
+whether any conservative omission of at most `budgets[i]` observation
+memberships from ball `i` can increase the number of connected components.
+
+```python
+from fast_ballmapper import certify_connectivity
+
+cover = [[0, 1], [0, 1]]
+result = certify_connectivity(cover, [1, 1], method="auto")
+assert result.robust is False
+assert result.deletions   # independently verified destructive omission witness
+```
+
+The result contains `robust: True | False | None`: `True` means the exact
+solver completed without finding a permissible disconnection; `False`
+means a disconnection and its verified membership-deletion witness;
+`None` means *inconclusive* (time or state limit). The method parameter
+selects `"auto"` (biconnected blocks + measured-width DP/MILP dispatch),
+`"milp"` (pattern-compressed SciPy/HiGHS), or `"dp"` (exact integer-state
+min-fill dynamic programming for a connected input). The DP's width cutoff
+is measured, not a certified separator width. The SciPy/HiGHS infeasibility
+status is numerical solver evidence rather than a formally checked
+integer-arithmetic proof.
+
+The fast existing `certify_component_preservation` remains available as a
+**sufficient** certificate. These methods do not infer or verify that an
+approximate search backend actually respects a claimed omission budget.
+They require the complete exact reference cover, fixed landmark indices,
+and no added ball memberships. Graph vertices persist even if a ball is
+emptied. For reproducible studies, see
+`experiments/benchmark_budget_certificates.py`.
+
 ## Citation
 
 Software citation metadata are provided in `CITATION.cff`. For research use, cite both the Ball Mapper methodology relevant to the analysis and the software release used for computation.
