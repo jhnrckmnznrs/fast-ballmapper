@@ -51,7 +51,9 @@ def _prepare(cover, n_samples, budgets):
     by_sample = defaultdict(list)
     for i, row in enumerate(cover):
         for x in set(row):
-            if not isinstance(x, (int, np.integer)) or not 0 <= x < n_samples:
+            if (isinstance(x, (bool, np.bool_))
+                    or not isinstance(x, (int, np.integer))
+                    or not 0 <= x < n_samples):
                 raise ValueError('invalid observation id')
             by_sample[int(x)].append(i)
     by_pattern = defaultdict(list)
@@ -108,7 +110,13 @@ def _min_fill_order(graph):
     adj={v:set(graph.neighbors(v)) for v in graph}
     order=[]
     while adj:
-        v=min(adj,key=lambda x:(sum(1 for a,b in combinations(adj[x],2) if b not in adj[a]),len(adj[x]),x))
+        v=min(
+            adj,
+            key=lambda x: (
+                sum(1 for a, b in combinations(adj[x], 2) if b not in adj[a]),
+                len(adj[x]), x,
+            ),
+        )
         around=adj.pop(v)
         for i in around:
             adj[i].discard(v)
@@ -160,7 +168,10 @@ def certify_separator_dp(
     patterns,by_pat,g=_prepare(cover,n_samples,budgets)
     m=g.number_of_nodes()
     if not m or m==1:
-        return Certificate(True,'at most one landmark',(),perf_counter()-start,0,0,0,len(patterns),m)
+        return Certificate(
+            True, 'at most one landmark', (), perf_counter()-start,
+            0, 0, 0, len(patterns), m,
+        )
     if not _roots_connected_and_block(g):
         raise ValueError('connected exact Ball Mapper graph required')
     if ordering=='geometry':
@@ -172,7 +183,9 @@ def certify_separator_dp(
         # Safe because every true overlap edge is at most 2eps.
         for i,j in g.edges:
             if np.linalg.norm(coords[i]-coords[j]) > 2*eps+1e-10*eps:
-                raise ValueError('observed cover inconsistent with coordinate proximity')
+                raise ValueError(
+                    'observed cover inconsistent with coordinate proximity'
+                )
         order=geometric_order(range(m),coords,eps)
     elif ordering=='minfill':
         order=_min_fill_order(g)
@@ -203,7 +216,10 @@ def certify_separator_dp(
     if protected:
         d=nx.Graph();d.add_nodes_from(range(m));d.add_edges_from(protected)
         if nx.is_connected(d):
-            return Certificate(True,'protected spanning graph',(),perf_counter()-start,width,0,0,len(patterns),m)
+            return Certificate(
+                True, 'protected spanning graph', (), perf_counter()-start,
+                width, 0, 0, len(patterns), m,
+            )
     caps=[int(min(b,n_samples)) for b in budgets]
     examined=0;peak=0
     table={} # node -> {(separator labels, spent costs, color mask): trace}
@@ -279,7 +295,11 @@ def certify_separator_dp(
             msg={}
             for (y,c,mask),trace in dp.items():
                 if c[idx[v]]>caps[v]:continue
-                key=(tuple(y[j] for j in Sidx), tuple(c[j] for j in Sidx), mask|(1<<y[idx[v]]))
+                key = (
+                    tuple(y[j] for j in Sidx),
+                    tuple(c[j] for j in Sidx),
+                    mask | (1 << y[idx[v]]),
+                )
                 msg.setdefault(key, (trace, y[idx[v]], B))
             table[v]=msg
             node_meta[v]=(idx,)
@@ -287,13 +307,19 @@ def certify_separator_dp(
             if examined>max_states or perf_counter()-start>time_limit:
                 raise Capped
     except Capped:
-        return Certificate(None,'state/time cap',(),perf_counter()-start,width,examined,peak,len(patterns),m)
+        return Certificate(
+            None, 'state/time cap', (), perf_counter()-start,
+            width, examined, peak, len(patterns), m,
+        )
     roots=[v for v in order if parent[v] is None]
     assert len(roots)==1
     root=roots[0]
     possible=[key for key in table[root] if key[2]==3]
     if not possible:
-        return Certificate(True,'DP proved no feasible split',(),perf_counter()-start,width,examined,peak,len(patterns),m)
+        return Certificate(
+            True, 'DP proved no feasible split', (), perf_counter()-start,
+            width, examined, peak, len(patterns), m,
+        )
     # Each state retains the choices used to construct it. Unwind the chosen
     # message recursively; witness-pattern decisions specify how many identical
     # observations retain side 1 and therefore yield concrete incidence edits.
@@ -331,4 +357,8 @@ def certify_separator_dp(
         for members in byx.values():
             g2.add_edges_from(combinations(members,2))
         assert not nx.is_connected(g2), 'bad DP witness'
-    return Certificate(False,'DP feasible and witness verified',cuts,perf_counter()-start,width,examined,peak,len(patterns),m,split=tuple(sorted(i for i,y in y_assignment.items() if y)))
+    return Certificate(
+        False, 'DP feasible and witness verified', cuts, perf_counter()-start,
+        width, examined, peak, len(patterns), m,
+        split=tuple(sorted(i for i, y in y_assignment.items() if y)),
+    )
