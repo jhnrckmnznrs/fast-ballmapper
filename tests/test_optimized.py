@@ -1,7 +1,6 @@
 """Independent exactness and edge-case tests for the optimized algorithms."""
 import itertools
 
-import networkx as nx
 import numpy as np
 import pytest
 from scipy.sparse.csgraph import connected_components
@@ -48,11 +47,11 @@ def test_greedy_and_complete_cover(n,d,eps):
         got,stats=build_cover_localized(x,lm,eps,owners,strategy=strategy,
                                          block_size=19,return_stats=True)
         assert len(got)==len(ref_cov)
-        assert all(np.array_equal(u,v) for u,v in zip(got,ref_cov))
+        assert all(np.array_equal(u,v) for u,v in zip(got,ref_cov,strict=True))
         assert stats.total_possible_point_evaluations == n*len(lm)
     got_lm,got_cov=compute_landmarks_uncovered(x,eps)
     assert got_lm==lm
-    assert all(np.array_equal(u,v) for u,v in zip(got_cov,ref_cov))
+    assert all(np.array_equal(u,v) for u,v in zip(got_cov,ref_cov,strict=True))
 
 
 @pytest.mark.parametrize('n,m',[(0,0),(100,15),(200,90),(50,1),(150,40)])
@@ -98,7 +97,7 @@ def test_streaming_pipeline():
     got_lm,got_graph=compute_mapper_streaming(x,.18,block_size=17)
     assert got_lm==lm
     assert np.array_equal(got_graph.toarray(),reference_adj(cover,len(x)))
-    assert all(np.array_equal(a,b) for a,b in zip(iter_cover_blocked(x,lm,.18,block_size=9),cover))
+    assert all(np.array_equal(a,b) for a,b in zip(iter_cover_blocked(x,lm,.18,block_size=9),cover,strict=True))
 
 
 def test_bad_owner_rejected():
