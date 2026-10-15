@@ -28,18 +28,18 @@ jobs:
           s = f.read_text()
           s = s.replace(
               "    if any(len(a - b) > int(limit) for a, b, limit in zip(original, changed, budgets, strict=False)):",
-              "    if any(\\n        len(a - b) > int(limit)\\n        for a, b, limit in zip(original, changed, budgets, strict=True)\\n    ):",
+              "    if any(\n        len(a - b) > int(limit)\n        for a, b, limit in zip(original, changed, budgets, strict=True)\n    ):",
           )
           f.write_text(s)
           f = root / "separator_dp.py"
           s = f.read_text()
           s = s.replace(
               "                        + [w - (caps[u] - c[j]) for u, j in zip(pat, positions, strict=False) if y[j]]",
-              "                        + [\\n                            w - (caps[u] - c[j])\\n                            for u, j in zip(pat, positions, strict=True)\\n                            if y[j]\\n                        ]",
+              "                        + [\n                            w - (caps[u] - c[j])\n                            for u, j in zip(pat, positions, strict=True)\n                            if y[j]\n                        ]",
           )
           s = s.replace(
               "                        + [caps[u] - c[j] for u, j in zip(pat, positions, strict=False) if not y[j]]",
-              "                        + [\\n                            caps[u] - c[j]\\n                            for u, j in zip(pat, positions, strict=True)\\n                            if not y[j]\\n                        ]",
+              "                        + [\n                            caps[u] - c[j]\n                            for u, j in zip(pat, positions, strict=True)\n                            if not y[j]\n                        ]",
           )
           f.write_text(s)
           PY
