@@ -11,6 +11,7 @@ import argparse
 import json
 import statistics
 import time
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -88,10 +89,11 @@ def main():
             )
             row[f"{engine}_warmup_seconds"] = time.perf_counter() - start
             got, duration = timed(
-                lambda x=x, landmarks=landmarks, eps=eps, owners=owners, engine=engine: build_cover_localized(
-                    x, landmarks, eps, owners,
-                    strategy="localized", engine=engine
-                ), args.repeats
+                partial(
+                    build_cover_localized, x, landmarks, eps, owners,
+                    strategy="localized", engine=engine,
+                ),
+                args.repeats,
             )
             assert all(
                 np.array_equal(a, b)
@@ -99,15 +101,14 @@ def main():
             )
             row[f"{engine}_seconds"] = duration
         adjacency, duration = timed(
-            lambda reference=reference, n=n: build_mapper_csr(reference, n), args.repeats
+            partial(build_mapper_csr, reference, n), args.repeats
         )
         row["csr_seconds"] = duration
         row["dispatch"] = select_mapper_algorithm(reference, n)
         for algorithm in ("auto", "streaming"):
             result, duration = timed(
-                lambda reference=reference, n=n, algorithm=algorithm: build_mapper_auto(
-                    reference, n, algorithm=algorithm
-                ), args.repeats
+                partial(build_mapper_auto, reference, n, algorithm=algorithm),
+                args.repeats,
             )
             assert (result != adjacency).nnz == 0
             row[f"{algorithm}_graph_seconds"] = duration
