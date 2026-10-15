@@ -13,6 +13,8 @@ from typing import Literal
 import numpy as np
 from scipy.sparse import csr_matrix
 
+from fast_ballmapper._accelerated import filter_candidates, _validate_engine
+
 
 def _points(x: np.ndarray, eps: float) -> np.ndarray:
     points = np.asarray(x)
@@ -106,6 +108,7 @@ def build_cover_localized(
     block_size: int = 16384,
     max_localized_fraction: float = 0.45,
     return_stats: bool = False,
+    engine: Literal['scalar', 'batch', 'numba', 'auto'] = 'auto',
 ) -> list[np.ndarray] | tuple[list[np.ndarray], CompletionStats]:
     """Build exact complete Euclidean balls from *verified* first-cover owners.
 
@@ -125,6 +128,7 @@ def build_cover_localized(
         or block_size <= 0
     ):
         raise ValueError('block_size must be a positive integer')
+    engine = _validate_engine(engine)
     if strategy not in ('auto', 'localized', 'blocked'):
         raise ValueError("strategy must be 'auto', 'localized' or 'blocked'")
     if not np.isfinite(max_localized_fraction) or not 0 < max_localized_fraction <= 1:
@@ -217,17 +221,29 @@ def build_cover_localized(
                 raise ValueError('center distance overflow; rescale coordinates')
             center_work += m
             admissible = np.flatnonzero(may_intersect(j, d))
+            # Batch across groups to amortize NumPy overhead. Retained
+            # members still use the direct float64 Euclidean predicate.
             chunks = []
+            candidate_groups = []
             for i in admissible:
                 ids = order[offsets[i]:offsets[i+1]]
                 if not len(ids):
                     continue
-                # A point always belongs to its assigned landmark's ball.
+                # A point always belongs to its verified owner's ball.
                 if i == j:
                     chunks.append(ids)
-                    continue
-                distance_work += len(ids)
-                chunks.append(ids[_within(points[ids], centers[j], eps)])
+                elif engine == 'scalar':
+                    distance_work += len(ids)
+                    chunks.append(ids[_within(points[ids], centers[j], eps)])
+                else:
+                    candidate_groups.append(ids)
+                    distance_work += len(ids)
+            if candidate_groups:
+                ids = np.concatenate(candidate_groups)
+                chunks.append(filter_candidates(
+                    points, centers[j], ids, eps, engine=engine,
+                    block_size=int(block_size),
+                ))
             cover.append(
                 np.sort(np.concatenate(chunks))
                 if chunks else np.empty(0, dtype=np.intp)
@@ -498,39 +514,78 @@ def build_mapper_csr(
                shape=(m,m),dtype=np.int64)
 
 
+def select_mapper_algorithm(
+    cover: Sequence[Sequence[int] | np.ndarray], n_samples: int,
+    *, stream_max_balls: int = 128, stream_max_memberships: int = 2048,
+    stream_max_witnesses: int = 512, stream_witness_ratio: float = 4.0,
+) -> Literal['csr', 'streaming']:
+    """Choose a low-overhead exact graph builder from cover statistics.
+
+    Python dictionary aggregation is effective on tiny, sparse covers;
+    sparse SpGEMM generally wins as the cover or witness work grows.
+    The thresholds are heuristic and callers can override the choice.
+    """
+    m = len(cover)
+    if m > stream_max_balls:
+        return 'csr'
+    memberships = [np.unique(_indices(ids, n_samples)) for ids in cover]
+    s = sum(len(a) for a in memberships)
+    if s > stream_max_memberships:
+        return 'csr'
+    if not s:
+        return 'streaming'
+    degrees = np.bincount(np.concatenate(memberships), minlength=n_samples)
+    t = sum(int(d) * (int(d) - 1) // 2 for d in degrees)
+    return (
+        'streaming'
+        if t <= min(stream_max_witnesses, stream_witness_ratio * max(s, 1))
+        else 'csr'
+    )
+
+
 def build_mapper_auto(
     cover: Sequence[Sequence[int] | np.ndarray], n_samples: int, *,
     output: Literal['csr','networkx'] = 'csr', row_block_size: int = 256,
     stream_witness_ratio: float = 4.0,
+    algorithm: Literal['auto','csr','streaming'] = 'auto',
 ):
-    """Choose exact witness enumeration for sparse incidence or blocked SpGEMM.
+    """Build exact witness-count graph, preferring CSR for numerical work.
 
-    Uses T=sum_x choose(deg(x),2), S=total incidence. Streaming avoids the
-    temporary sparse transpose but may be slower for highly overlapping balls.
+    Default output='csr' avoids NetworkX Python-object memory overhead.
+    output='networkx' remains supported. 'auto' dispatches tiny sparse covers
+    to streaming and larger covers to sparse SpGEMM. Pass algorithm='csr'
+    or algorithm='streaming' to override the selection.
+    The stream_witness_ratio option is retained as a secondary dispatch cap.
     """
     if not np.isfinite(stream_witness_ratio) or stream_witness_ratio < 0:
         raise ValueError('stream_witness_ratio must be finite and nonnegative')
-    normalized = [np.unique(_indices(ids,n_samples)) for ids in cover]
-    lengths = np.concatenate(normalized) if normalized else np.empty(0,dtype=np.intp)
-    degrees = np.bincount(lengths, minlength=n_samples).astype(np.int64)
-    t = sum(int(a)*(int(a)-1)//2 for a in degrees)
-    s = len(lengths)
-    if t <= stream_witness_ratio * max(s,1):
-        return build_mapper_streaming(
-            iter(normalized), n_samples, n_balls=len(normalized), output=output
+    if algorithm not in ('auto', 'csr', 'streaming'):
+        raise ValueError("algorithm must be 'auto', 'csr', or 'streaming'")
+    if output not in ('csr', 'networkx'):
+        raise ValueError("output must be 'csr' or 'networkx'")
+    method = (
+        select_mapper_algorithm(
+            cover, n_samples, stream_witness_ratio=stream_witness_ratio
         )
-    adj = build_mapper_csr(normalized,n_samples,row_block_size=row_block_size)
+        if algorithm == 'auto' else algorithm
+    )
+    if method == 'streaming':
+        return build_mapper_streaming(
+            iter(cover), n_samples, n_balls=len(cover), output=output
+        )
+    adj = build_mapper_csr(cover, n_samples, row_block_size=row_block_size)
     if output == 'csr':
         return adj
-    if output != 'networkx':
-        raise ValueError("output must be 'csr' or 'networkx'")
     import networkx as nx
-    result = nx.Graph()
-    result.add_nodes_from(range(len(cover)))
+    graph = nx.Graph()
+    graph.add_nodes_from(range(len(cover)))
     upper = adj.tocoo()
-    result.add_edges_from((int(r),int(c),{'witness_count':int(w)}) for r,c,w
-                          in zip(upper.row,upper.col,upper.data,strict=True) if r < c)
-    return result
+    graph.add_edges_from(
+        (int(r), int(c), {'witness_count': int(w)})
+        for r, c, w in zip(upper.row, upper.col, upper.data, strict=True)
+        if r < c
+    )
+    return graph
 
 
 def iter_cover_blocked(
