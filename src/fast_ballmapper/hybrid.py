@@ -15,8 +15,12 @@ from time import perf_counter
 import networkx as nx
 import numpy as np
 
-from fast_ballmapper.separator_dp import _prepare, _min_fill_order, _decomposition, certify_separator_dp
-from fast_ballmapper.robustness import certify_per_ball_budgets,check_disconnection_witness
+from fast_ballmapper.separator_dp import (
+    _prepare, _min_fill_order, _decomposition, certify_separator_dp,
+)
+from fast_ballmapper.robustness import (
+    certify_per_ball_budgets, check_disconnection_witness,
+)
 
 
 @dataclass
@@ -43,7 +47,10 @@ def certify_hybrid(cover,n_samples,budgets,*,width_cutoff=3,
         return HybridResult(True,'trivial',(),perf_counter()-start,0,0,0,0,0,0,())
     # Existing components cannot acquire new edges under conservative errors.
     # The global statement is robust iff every original component is robust.
-    components=sorted((tuple(sorted(c)) for c in nx.connected_components(g)),key=lambda x:x[0])
+    components=sorted(
+        (tuple(sorted(c)) for c in nx.connected_components(g)),
+        key=lambda x: x[0],
+    )
     blocks=[]
     for cc in components:
         if len(cc)>1:
@@ -96,7 +103,10 @@ def certify_hybrid(cover,n_samples,budgets,*,width_cutoff=3,
                         time_limit=time_limit)
             methods.append('MILP-width-'+str(width))
         if result.robust is False:
-            orig=result.deletions if hasattr(result,'deletions') else result.witness_deletions
+            orig = (
+                result.deletions if hasattr(result, 'deletions')
+                else result.witness_deletions
+            )
             deletions=tuple(sorted((b[i],int(x)) for i,x in orig))
             if not check_disconnection_witness(cover,n_samples,budgets,deletions):
                 raise AssertionError('invalid hybrid attack witness')
