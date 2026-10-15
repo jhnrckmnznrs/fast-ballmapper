@@ -259,11 +259,13 @@ def compute_landmarks_uncovered(
     x: np.ndarray, eps: float, *,
     strategy: Literal['auto', 'localized', 'blocked'] = 'auto',
     block_size: int = 16384,
+    engine: Literal['scalar', 'batch', 'numba', 'auto'] = 'auto',
 ) -> tuple[list[int], list[np.ndarray]]:
     """Drop-in Euclidean alternative returning full greedy landmarks and cover."""
     landmarks, owner = select_landmarks_uncovered(x, eps, block_size=block_size)
     cover = build_cover_localized(
-        x, landmarks, eps, owner, strategy=strategy, block_size=block_size
+        x, landmarks, eps, owner, strategy=strategy, block_size=block_size,
+        engine=engine,
     )
     return landmarks, cover
 
