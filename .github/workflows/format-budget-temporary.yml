@@ -20,7 +20,30 @@ jobs:
         run: |
           python -m pip install ruff==0.17.0
           ruff format src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py
-          ruff check src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py --fix --unsafe-fixes
+          ruff check src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py --fix --unsafe-fixes || true
+          python - <<'PY'
+          from pathlib import Path
+          root = Path("src/fast_ballmapper")
+          f = root / "robustness.py"
+          s = f.read_text()
+          s = s.replace(
+              "    if any(len(a - b) > int(limit) for a, b, limit in zip(original, changed, budgets, strict=False)):",
+              "    if any(\\n        len(a - b) > int(limit)\\n        for a, b, limit in zip(original, changed, budgets, strict=True)\\n    ):",
+          )
+          f.write_text(s)
+          f = root / "separator_dp.py"
+          s = f.read_text()
+          s = s.replace(
+              "                        + [w - (caps[u] - c[j]) for u, j in zip(pat, positions, strict=False) if y[j]]",
+              "                        + [\\n                            w - (caps[u] - c[j])\\n                            for u, j in zip(pat, positions, strict=True)\\n                            if y[j]\\n                        ]",
+          )
+          s = s.replace(
+              "                        + [caps[u] - c[j] for u, j in zip(pat, positions, strict=False) if not y[j]]",
+              "                        + [\\n                            caps[u] - c[j]\\n                            for u, j in zip(pat, positions, strict=True)\\n                            if not y[j]\\n                        ]",
+          )
+          f.write_text(s)
+          PY
+          ruff format src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py
           ruff check src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py
       - name: Commit format-only edits on feature branch
         run: |
