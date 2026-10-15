@@ -4,6 +4,7 @@ A robust result means no allowed *membership omissions* can increase the number
 of connected components. False means a verifiable destructive attack exists;
 None means the configured exact solver could not finish. Landmarks are fixed.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -53,9 +54,11 @@ def certify_connectivity(
         raise ValueError("method must be 'auto', 'milp', or 'dp'")
     if n_samples is None:
         n_samples = max((int(j) for row in exact_cover for j in row), default=-1) + 1
-    if isinstance(n_samples, (bool, np.bool_)) or not isinstance(
-        n_samples, (int, np.integer)
-    ) or n_samples < 0:
+    if (
+        isinstance(n_samples, (bool, np.bool_))
+        or not isinstance(n_samples, (int, np.integer))
+        or n_samples < 0
+    ):
         raise ValueError("n_samples must be a nonnegative integer")
     if len(budgets) != len(exact_cover) or any(
         isinstance(b, (bool, np.bool_))
@@ -73,8 +76,11 @@ def certify_connectivity(
 
     if method == "auto":
         r = certify_hybrid(
-            exact_cover, int(n_samples), budgets,
-            width_cutoff=width_cutoff, max_states=max_states,
+            exact_cover,
+            int(n_samples),
+            budgets,
+            width_cutoff=width_cutoff,
+            max_states=max_states,
             time_limit=time_limit,
         )
         deletions = r.deletions
@@ -93,8 +99,12 @@ def certify_connectivity(
         width = 0
     else:
         r = certify_separator_dp(
-            exact_cover, int(n_samples), budgets, ordering="minfill",
-            max_states=max_states, time_limit=time_limit,
+            exact_cover,
+            int(n_samples),
+            budgets,
+            ordering="minfill",
+            max_states=max_states,
+            time_limit=time_limit,
         )
         deletions = r.deletions
         status = r.status
@@ -106,7 +116,11 @@ def certify_connectivity(
     ):
         raise RuntimeError("solver returned an invalid disconnection witness")
     return ConnectivityCertificate(
-        robust=r.robust, status=status, method=method,
-        deletions=tuple(deletions), elapsed_seconds=float(elapsed),
-        blocks=blocks, max_width=width,
+        robust=r.robust,
+        status=status,
+        method=method,
+        deletions=tuple(deletions),
+        elapsed_seconds=float(elapsed),
+        blocks=blocks,
+        max_width=width,
     )
