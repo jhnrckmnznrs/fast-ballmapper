@@ -53,7 +53,11 @@ def _prepare(cover: Sequence[Sequence[int]], n_samples: int, budgets: Sequence[i
             not isinstance(n_samples,(int,np.integer)) or
             n_samples<0 or len(budgets)!=m):
         raise ValueError('invalid n_samples or budgets')
-    if any(isinstance(b,(bool,np.bool_)) or not isinstance(b,(int,np.integer)) or b<0 for b in budgets):
+    if any(
+        isinstance(b, (bool, np.bool_))
+        or not isinstance(b, (int, np.integer)) or b < 0
+        for b in budgets
+    ):
         raise ValueError('budgets must be nonnegative integers')
     inc=defaultdict(list)
     for i,row in enumerate(cover):
@@ -109,7 +113,7 @@ def _local_solver(patterns:Counter, idxs:list[int], budgets:list[int],
     protected=DSU(m)
     protected_edges=0
     if shortcut:
-        # Count exact witnesses only when cost of enumerating induced cliques is moderate.
+        # Count exact witnesses only when enumerating cliques is moderate.
         pairwork=sum(len(ids)*(len(ids)-1)//2 for ids,w in pats.items())
         if pairwork <=200_000:
             witnesses=Counter()
@@ -172,12 +176,22 @@ def _local_solver(patterns:Counter, idxs:list[int], budgets:list[int],
     objective[ng+pcount:]=1.0
     solution=milp(c=objective,integrality=integrality,bounds=Bounds(lo,hi),
                   constraints=LinearConstraint(A,low,high),
-                  options={'time_limit':time_limit,'presolve':presolve,'mip_rel_gap':0.})
+                  options={
+                      'time_limit': time_limit,
+                      'presolve': presolve,
+                      'mip_rel_gap': 0.,
+                  })
     elapsed=perf_counter()-start
     if solution.status==2:
-        return Result(True,'MILP infeasible: certified robust',(),None,elapsed,pcount,vcount,ng,protected_edges,'milp')
+        return Result(
+            True, 'MILP infeasible: certified robust', (), None, elapsed,
+            pcount, vcount, ng, protected_edges, 'milp',
+        )
     if solution.x is None or solution.status!=0:
-        return Result(None,f'MILP status {solution.status}: {solution.message}',(),None,elapsed,pcount,vcount,ng,protected_edges,'milp')
+        return Result(
+            None, f'MILP status {solution.status}: {solution.message}',
+            (), None, elapsed, pcount, vcount, ng, protected_edges, 'milp',
+        )
     y=[round(float(v)) for v in solution.x[:ng]]
     ts=[round(float(v)) for v in solution.x[ng:ng+pcount]]
     selected=tuple(idxs[i] for i,g in enumerate(groups) if y[g]==1)
@@ -193,7 +207,10 @@ def _local_solver(patterns:Counter, idxs:list[int], budgets:list[int],
                 if y[groups[i]] != int(x in assigned_one):
                     cuts.append((idxs[i],int(x)))
     cuts.sort()
-    return Result(False,'MILP witness found',tuple(cuts),selected,elapsed,pcount,vcount,ng,protected_edges,'milp')
+    return Result(
+        False, 'MILP witness found', tuple(cuts), selected, elapsed,
+        pcount, vcount, ng, protected_edges, 'milp',
+    )
 
 
 def certify_per_ball_budgets(cover,n_samples,budgets,*,shortcut=True,time_limit=30):
@@ -208,7 +225,9 @@ def certify_per_ball_budgets(cover,n_samples,budgets,*,shortcut=True,time_limit=
     patterns,inc,components,by_pattern=_prepare(cover,n_samples,budgets)
     results=[]
     for component in components:
-        r=_local_solver(patterns,component,list(map(int,budgets)),by_pattern,shortcut=shortcut,
+        r=_local_solver(
+            patterns, component, list(map(int,budgets)), by_pattern,
+            shortcut=shortcut,
                         time_limit=time_limit)
         results.append(r)
     if not results:return Result(True,'empty',(),None,0,0,0,0,0,'trivial')
@@ -221,10 +240,15 @@ def certify_per_ball_budgets(cover,n_samples,budgets,*,shortcut=True,time_limit=
         return failed
     unknown=next((r for r in results if r.robust is None),None)
     if unknown is not None:return unknown
-    return Result(True,'all exact components robust',(),None,sum(r.elapsed_seconds for r in results),
-                  sum(r.n_patterns for r in results),sum(r.n_variables for r in results),
-                  sum(r.n_protected_groups for r in results),sum(r.protected_edges for r in results),
-                  '+'.join(sorted(set(r.method for r in results))))
+    return Result(
+        True, 'all exact components robust', (), None,
+        sum(r.elapsed_seconds for r in results),
+        sum(r.n_patterns for r in results),
+        sum(r.n_variables for r in results),
+        sum(r.n_protected_groups for r in results),
+        sum(r.protected_edges for r in results),
+        '+'.join(sorted(set(r.method for r in results))),
+    )
 
 
 @dataclass
