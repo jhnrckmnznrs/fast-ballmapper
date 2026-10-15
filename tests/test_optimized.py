@@ -156,3 +156,56 @@ def test_localization_at_nextafter_boundaries(d):
             np.array_equal(a, b)
             for a, b in zip(cover, reference, strict=True)
         )
+
+
+def test_localized_roundoff_near_triangle_boundary():
+    """Regression: a rounded center distance excluded a genuine ball member."""
+    x = np.array([
+        [0.012219733531418886],
+        [33466.700122809045],
+        [16733.356171271287],
+        [8366.68419550241],
+        [25100.02814704017],
+    ])
+    eps = 16733.343951537758
+    landmark_ids, owners = select_landmarks_uncovered(x, eps)
+    expected = [
+        np.flatnonzero(np.linalg.norm(x - x[j], axis=1) <= eps)
+        for j in landmark_ids
+    ]
+    assert len(landmark_ids) >= 2
+    assert 2 in expected[1]
+    for method in ('localized', 'auto', 'blocked'):
+        completed = build_cover_localized(
+            x, landmark_ids, eps, owners, strategy=method
+        )
+        assert all(
+            np.array_equal(a, b)
+            for a, b in zip(expected, completed, strict=True)
+        )
+
+
+def test_localized_roundoff_random_ulp_boundary():
+    """Guard center-group pruning against directly rounded norm discrepancies."""
+    rng = np.random.default_rng(20261015)
+    for _ in range(300):
+        eps = 10.0 ** rng.uniform(-5, 5)
+        shift = rng.normal() * 10.0 ** rng.uniform(-5, 5)
+        ulp = np.nextafter(eps, np.inf) - eps
+        point = shift + eps + rng.integers(-2, 3) * ulp
+        x = np.array([
+            [shift], [shift + 2 * eps], [point],
+            [shift + eps / 2], [shift + 3 * eps / 2]
+        ], dtype=np.float64)
+        landmark_ids, owners = select_landmarks_uncovered(x, eps)
+        expected = [
+            np.flatnonzero(np.linalg.norm(x - x[j], axis=1) <= eps)
+            for j in landmark_ids
+        ]
+        completed = build_cover_localized(
+            x, landmark_ids, eps, owners, strategy='localized'
+        )
+        assert all(
+            np.array_equal(a, b)
+            for a, b in zip(expected, completed, strict=True)
+        )
