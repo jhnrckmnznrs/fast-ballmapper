@@ -3,6 +3,8 @@ import fast_ballmapper
 
 def test_public_api_uses_snake_case():
     expected = {
+        "ConnectivityCertificate",
+        "certify_connectivity",
         "CompletionStats",
         "ComponentFiltration",
         "ball_mapper_components",
