@@ -159,6 +159,28 @@ def build_cover_localized(
         owner_evaluations += len(ids)
     center_work = 0
     selected = strategy
+    # Independently rounded Euclidean norms may violate the triangle-inequality
+    # threshold by a few ulps. Include uncertain groups rather than excluding
+    # them. The coordinate scale also covers large translated point clouds.
+    # This is deliberately conservative but is not a formal interval proof
+    # for every possible hardware/dtype combination.
+    unit = np.finfo(np.float64).eps
+    dimension = points.shape[1]
+    max_coord = (
+        np.max(np.abs(centers), axis=1)
+        if dimension else np.zeros(m, dtype=np.float64)
+    )
+    subnormal_guard = 16.0 * np.nextafter(0.0, 1.0)
+
+    def may_intersect(j: int, distances: np.ndarray) -> np.ndarray:
+        with np.errstate(over="ignore", invalid="ignore"):
+            extent = (
+                np.sqrt(dimension) * (max_coord + max_coord[j])
+                + eps + radii
+            )
+            guard = (64.0 * unit * (dimension + 2)) * extent + subnormal_guard
+            threshold = np.nextafter(eps + radii + guard, np.inf)
+        return distances <= threshold
     if strategy == 'auto':
         # Estimate the admissible point fraction without computing any full ball.
         # High-dimensional geometry rarely profits from Euclidean group exclusion.
@@ -170,7 +192,7 @@ def build_cover_localized(
             for j in sample:
                 d = np.linalg.norm(centers - centers[j], axis=1)
                 center_work += m
-                expected += int(np.sum(counts[d <= eps + radii]))
+                expected += int(np.sum(counts[may_intersect(int(j), d)]))
             selected = (
                 'localized'
                 if expected < max_localized_fraction * n * len(sample)
@@ -194,7 +216,7 @@ def build_cover_localized(
             if not np.all(np.isfinite(d)):
                 raise ValueError('center distance overflow; rescale coordinates')
             center_work += m
-            admissible = np.flatnonzero(d <= eps + radii)
+            admissible = np.flatnonzero(may_intersect(j, d))
             chunks = []
             for i in admissible:
                 ids = order[offsets[i]:offsets[i+1]]
