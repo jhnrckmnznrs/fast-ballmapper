@@ -55,6 +55,11 @@ from fast_ballmapper.sparse import (
     cover_statistics,
 )
 
+from fast_ballmapper.budget_certificates import (
+    ConnectivityCertificate,
+    certify_connectivity,
+)
+
 from fast_ballmapper.optimized import (
     CompletionStats,
     ComponentFiltration,
@@ -78,6 +83,8 @@ except PackageNotFoundError:  # pragma: no cover - source checkout fallback
     __version__ = "0.2.0"
 
 __all__ = [
+    "ConnectivityCertificate",
+    "certify_connectivity",
     "CompletionStats",
     "ComponentFiltration",
     "ball_mapper_components",
