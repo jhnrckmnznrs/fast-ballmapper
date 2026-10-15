@@ -19,8 +19,8 @@ jobs:
       - name: Format and lint only new robustness modules
         run: |
           python -m pip install ruff==0.17.0
-          ruff check src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py --fix
           ruff format src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py
+          ruff check src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py --fix || true
           ruff check src/fast_ballmapper/{robustness,separator_dp,hybrid,budget_certificates}.py tests/test_budget_certificates.py experiments/benchmark_budget_certificates.py
       - name: Commit format-only edits on feature branch
         run: |
