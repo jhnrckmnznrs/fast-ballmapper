@@ -68,3 +68,21 @@ jobs:
         run: python -m build
       - name: Check distributions
         run: python -m twine check dist/*
+
+  optional-jit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install optional Numba backend
+        run: python -m pip install -e ".[dev,jit]"
+      - name: Test compiled candidate screening and numerical boundaries
+        run: pytest tests/test_accelerated.py
+      - name: Benchmark runner smoke test with JIT
+        env:
+          OMP_NUM_THREADS: 1
+          OPENBLAS_NUM_THREADS: 1
+        run: python experiments/benchmark_dispatch_and_completion.py --smoke --with-numba
