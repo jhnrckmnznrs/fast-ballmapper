@@ -1,0 +1,9 @@
+title: fast-ballmapper
+description: Clean, practical documentation for constructing and studying Ball Mapper graphs in Python.
+url: "https://jhnrckmnznrs.github.io"
+baseurl: "/fast-ballmapper"
+markdown: kramdown
+highlighter: rouge
+permalink: pretty
+exclude:
+  - README.md

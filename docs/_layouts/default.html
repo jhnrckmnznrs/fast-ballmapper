@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fbfcfa">
+  <meta name="description" content="{{ page.description | default: site.description | escape }}">
+  <title>{% if page.url == '/' %}{{ site.title }} · Documentation{% else %}{{ page.title }} · {{ site.title }}{% endif %}</title>
+  <link rel="canonical" href="{{ page.url | absolute_url }}">
+  <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <div class="site-shell">
+    <aside class="sidebar" aria-label="Documentation navigation">
+      <a class="brand" href="{{ '/' | relative_url }}" aria-label="fast-ballmapper documentation home">
+        <span class="brand-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-name">fast-ballmapper</span>
+      </a>
+      <p class="sidebar-caption">DOCUMENTATION</p>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a {% if page.url == '/' %}aria-current="page"{% endif %} href="{{ '/' | relative_url }}">Overview</a>
+        <a {% if page.url == '/start/' %}aria-current="page"{% endif %} href="{{ '/start/' | relative_url }}">Getting started</a>
+        <a {% if page.url == '/workflow/' %}aria-current="page"{% endif %} href="{{ '/workflow/' | relative_url }}">Ball Mapper workflow</a>
+        <a {% if page.url == '/reference/' %}aria-current="page"{% endif %} href="{{ '/reference/' | relative_url }}">Function reference</a>
+        <a {% if page.url == '/methods/' %}aria-current="page"{% endif %} href="{{ '/methods/' | relative_url }}">Search methods</a>
+        <a {% if page.url == '/advanced/' %}aria-current="page"{% endif %} href="{{ '/advanced/' | relative_url }}">Advanced computations</a>
+        <a {% if page.url == '/development/' %}aria-current="page"{% endif %} href="{{ '/development/' | relative_url }}">Development</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <a href="https://github.com/jhnrckmnznrs/fast-ballmapper" rel="noopener noreferrer">GitHub repository <span aria-hidden="true">↗</span></a>
+        <a href="https://pypi.org/project/fast-ballmapper/" rel="noopener noreferrer">Python package <span aria-hidden="true">↗</span></a>
+      </div>
+    </aside>
+    <div class="main-area">
+      <header class="topbar">
+        <span>Python package / Documentation</span>
+        <a href="https://github.com/jhnrckmnznrs/fast-ballmapper/blob/main/README.md" rel="noopener noreferrer">README <span aria-hidden="true">↗</span></a>
+      </header>
+      <main id="content" class="content{% if page.url == '/' %} home{% endif %}">
+        {{ content }}
+      </main>
+      <footer class="footer">
+        <span>fast-ballmapper</span>
+        <span>Open source · MIT license · <a href="https://github.com/jhnrckmnznrs/fast-ballmapper">Source code ↗</a></span>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>
